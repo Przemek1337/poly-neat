@@ -1,0 +1,8 @@
+.venv/
+runs/
+__pycache__/
+*.pkl
+*.egg-info/
+.pytest_cache/
+dist/
+*.pyc
