@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from polyneat.algorithms.neat.neat_genome import NEATGenome
+from polyneat.core.type_aliases import SpeciesId
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class SpeciesRepresentative:
+    species_id: SpeciesId
+    representative_genome: NEATGenome
+    generations_since_last_improvement: int = 0
+    best_adjusted_fitness_ever: float = float("-inf")
+    member_genome_count_in_current_generation: int = 0
+    member_indices_in_current_generation: list[int] = field(default_factory=list)
+
+
+class CompatibilityDistanceSpeciator:
+    """Stanley's NEAT speciation using the compatibility distance formula.
+
+    Distance between two genomes:
+
+        δ = c1·E/N + c2·D/N + c3·W̄
+
+    where ``E`` counts excess genes (past the max innovation id of the other),
+    ``D`` counts disjoint genes (before that boundary but unmatched), ``W̄`` is
+    the mean absolute weight difference over matching connections, and ``N`` is
+    the size of the larger genome (clamped to 1 for tiny genomes).
+
+    Species representatives from the *previous* generation are kept; each new
+    genome is assigned to the first species whose representative is within
+    ``compatibility_threshold``. If none match, a new species is created and
+    the current genome becomes its representative.
+    """
+
+    def __init__(
+        self,
+        coefficient_excess_c1: float,
+        coefficient_disjoint_c2: float,
+        coefficient_weight_difference_c3: float,
+        compatibility_threshold: float,
+        small_genome_size_threshold_for_normalization: int = 20,
+    ) -> None:
+        self._coefficient_excess_c1 = coefficient_excess_c1
+        self._coefficient_disjoint_c2 = coefficient_disjoint_c2
+        self._coefficient_weight_difference_c3 = coefficient_weight_difference_c3
+        self._compatibility_threshold = compatibility_threshold
+        self._small_genome_size_threshold_for_normalization = (
+            small_genome_size_threshold_for_normalization
+        )
+        self._species_representatives_from_previous_generation: list[SpeciesRepresentative] = []
+        self._next_species_id: SpeciesId = 0
+
+    def assign_genomes_to_species(self, genomes: list[NEATGenome]) -> list[SpeciesId]:
+        species_id_per_genome: list[SpeciesId] = [-1] * len(genomes)
+        for representative in self._species_representatives_from_previous_generation:
+            representative.member_genome_count_in_current_generation = 0
+            representative.member_indices_in_current_generation = []
+
+        for genome_index, genome in enumerate(genomes):
+            assigned_species_id = self._find_or_create_species_for_genome(genome, genome_index)
+            species_id_per_genome[genome_index] = assigned_species_id
+
+        self._prune_empty_species()
+        return species_id_per_genome
+
+    def _find_or_create_species_for_genome(
+        self,
+        genome: NEATGenome,
+        genome_index_in_population: int,
+    ) -> SpeciesId:
+        for representative in self._species_representatives_from_previous_generation:
+            distance_to_representative = self.compute_compatibility_distance(
+                genome_a=genome,
+                genome_b=representative.representative_genome,
+            )
+            if distance_to_representative < self._compatibility_threshold:
+                representative.member_genome_count_in_current_generation += 1
+                representative.member_indices_in_current_generation.append(
+                    genome_index_in_population
+                )
+                return representative.species_id
+
+        new_species_id = self._next_species_id
+        self._next_species_id += 1
+        new_representative = SpeciesRepresentative(
+            species_id=new_species_id,
+            representative_genome=genome,
+            member_genome_count_in_current_generation=1,
+            member_indices_in_current_generation=[genome_index_in_population],
+        )
+        self._species_representatives_from_previous_generation.append(new_representative)
+        return new_species_id
+
+    def _prune_empty_species(self) -> None:
+        self._species_representatives_from_previous_generation = [
+            representative
+            for representative in self._species_representatives_from_previous_generation
+            if representative.member_genome_count_in_current_generation > 0
+        ]
+
+    def compute_compatibility_distance(
+        self,
+        genome_a: NEATGenome,
+        genome_b: NEATGenome,
+    ) -> float:
+        connections_by_innovation_id_a = {
+            connection_gene.innovation_id: connection_gene
+            for connection_gene in genome_a.connection_genes
+        }
+        connections_by_innovation_id_b = {
+            connection_gene.innovation_id: connection_gene
+            for connection_gene in genome_b.connection_genes
+        }
+
+        if not connections_by_innovation_id_a and not connections_by_innovation_id_b:
+            return 0.0
+
+        max_innovation_id_in_a = (
+            max(connections_by_innovation_id_a) if connections_by_innovation_id_a else -1
+        )
+        max_innovation_id_in_b = (
+            max(connections_by_innovation_id_b) if connections_by_innovation_id_b else -1
+        )
+        highest_shared_boundary_innovation_id = min(max_innovation_id_in_a, max_innovation_id_in_b)
+
+        excess_gene_count = 0
+        disjoint_gene_count = 0
+        matching_gene_absolute_weight_differences: list[float] = []
+
+        all_innovation_ids_across_both_genomes = set(connections_by_innovation_id_a) | set(
+            connections_by_innovation_id_b
+        )
+        for innovation_id in all_innovation_ids_across_both_genomes:
+            gene_a = connections_by_innovation_id_a.get(innovation_id)
+            gene_b = connections_by_innovation_id_b.get(innovation_id)
+
+            if gene_a is not None and gene_b is not None:
+                matching_gene_absolute_weight_differences.append(
+                    abs(gene_a.weight - gene_b.weight)
+                )
+            elif innovation_id > highest_shared_boundary_innovation_id:
+                excess_gene_count += 1
+            else:
+                disjoint_gene_count += 1
+
+        larger_genome_connection_count = max(
+            len(connections_by_innovation_id_a), len(connections_by_innovation_id_b)
+        )
+        normalization_factor = (
+            larger_genome_connection_count
+            if larger_genome_connection_count >= self._small_genome_size_threshold_for_normalization
+            else 1
+        )
+
+        mean_matching_weight_difference = (
+            sum(matching_gene_absolute_weight_differences)
+            / len(matching_gene_absolute_weight_differences)
+            if matching_gene_absolute_weight_differences
+            else 0.0
+        )
+
+        compatibility_distance_value = (
+            self._coefficient_excess_c1 * excess_gene_count / normalization_factor
+            + self._coefficient_disjoint_c2 * disjoint_gene_count / normalization_factor
+            + self._coefficient_weight_difference_c3 * mean_matching_weight_difference
+        )
+        return compatibility_distance_value
+
+    def species_representatives_snapshot(self) -> list[SpeciesRepresentative]:
+        """Return the current internal species representative list.
+
+        Consumers (e.g. NEATAlgorithm) use this to compute per-species offspring
+        allocations and elitism.
+        """
+        return list(self._species_representatives_from_previous_generation)

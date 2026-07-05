@@ -5,8 +5,8 @@ import sys
 import uuid
 from pathlib import Path
 
-from polyneat.config.logging_config import LoggingConfig
 from polyneat.logging_utils.colored_level_formatter import ColoredLevelFormatter
+from polyneat.logging_utils.logging_config import LoggingConfig
 
 _active_logging_config: LoggingConfig = LoggingConfig()
 
