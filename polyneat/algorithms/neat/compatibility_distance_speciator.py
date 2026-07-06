@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from numpy.random import Generator
+
 from polyneat.algorithms.neat.neat_genome import NEATGenome
 from polyneat.core.type_aliases import SpeciesId
 from polyneat.logging_utils.custom_logger import get_logger
@@ -31,10 +33,16 @@ class CompatibilityDistanceSpeciator:
     the mean absolute weight difference over matching connections, and ``N`` is
     the size of the larger genome (clamped to 1 for tiny genomes).
 
-    Species representatives from the *previous* generation are kept; each new
-    genome is assigned to the first species whose representative is within
+    Each genome is assigned to the first species whose representative is within
     ``compatibility_threshold``. If none match, a new species is created and
     the current genome becomes its representative.
+
+    After every assignment pass the representative of each surviving species is
+    *resampled*: a random member of the just-assigned generation replaces the
+    old representative. This matches the paper ("each existing species is
+    represented by a random genome inside the species from the previous
+    generation") and prevents species drifting away from a stale, frozen
+    founder genome — which fragments the population into spurious new species.
     """
 
     def __init__(
@@ -55,7 +63,9 @@ class CompatibilityDistanceSpeciator:
         self._species_representatives_from_previous_generation: list[SpeciesRepresentative] = []
         self._next_species_id: SpeciesId = 0
 
-    def assign_genomes_to_species(self, genomes: list[NEATGenome]) -> list[SpeciesId]:
+    def assign_genomes_to_species(
+        self, genomes: list[NEATGenome], rng: Generator
+    ) -> list[SpeciesId]:
         species_id_per_genome: list[SpeciesId] = [-1] * len(genomes)
         for representative in self._species_representatives_from_previous_generation:
             representative.member_genome_count_in_current_generation = 0
@@ -66,7 +76,26 @@ class CompatibilityDistanceSpeciator:
             species_id_per_genome[genome_index] = assigned_species_id
 
         self._prune_empty_species()
+        self._resample_species_representatives_from_current_members(genomes, rng)
         return species_id_per_genome
+
+    def _resample_species_representatives_from_current_members(
+        self,
+        genomes: list[NEATGenome],
+        rng: Generator,
+    ) -> None:
+        """Replace each species representative with a random current member.
+
+        Runs after assignment, so from the perspective of the *next* generation
+        the representative is a random genome of the previous generation, as
+        prescribed by the paper.
+        """
+        for representative in self._species_representatives_from_previous_generation:
+            member_indices = representative.member_indices_in_current_generation
+            if not member_indices:
+                continue
+            sampled_member_index = member_indices[int(rng.integers(0, len(member_indices)))]
+            representative.representative_genome = genomes[sampled_member_index]
 
     def _find_or_create_species_for_genome(
         self,

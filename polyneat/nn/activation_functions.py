@@ -13,6 +13,16 @@ def sigmoid_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
     return torch.sigmoid(pre_activation_tensor)
 
 
+def steepened_sigmoid_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
+    """Sigmoid with slope 4.9 as used in Stanley & Miikkulainen (2002), section 4.1.
+
+    The steep slope lets networks reach near-saturated outputs (close to 0/1)
+    with weights of ordinary magnitude, which is essential for matching the
+    paper's XOR convergence speed.
+    """
+    return torch.sigmoid(4.9 * pre_activation_tensor)
+
+
 def tanh_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
     return torch.tanh(pre_activation_tensor)
 
@@ -31,6 +41,7 @@ def identity_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
 
 ACTIVATION_FUNCTION_NAME_TO_CALLABLE: dict[str, ActivationFunction] = {
     "sigmoid": sigmoid_activation,
+    "steepened_sigmoid": steepened_sigmoid_activation,
     "tanh": tanh_activation,
     "relu": relu_activation,
     "leaky_relu": leaky_relu_activation,

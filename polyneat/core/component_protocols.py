@@ -86,7 +86,9 @@ class ParentSelection(Protocol):
 class Speciator(Protocol):
     """Assigns each genome to a species."""
 
-    def assign_genomes_to_species(self, genomes: list[Genome]) -> list[SpeciesId]: ...
+    def assign_genomes_to_species(
+        self, genomes: list[Genome], rng: Generator
+    ) -> list[SpeciesId]: ...
 
 
 @runtime_checkable

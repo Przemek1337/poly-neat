@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from statistics import mean, median
@@ -9,7 +10,6 @@ from numpy.random import Generator
 
 from polyneat.algorithms.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
-    SpeciesRepresentative,
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
@@ -233,7 +233,8 @@ class NEATAlgorithm:
         ]
 
         species_id_per_genome_index = self.speciator.assign_genomes_to_species(
-            neat_genomes_in_current_population  # type: ignore[arg-type]
+            neat_genomes_in_current_population,  # type: ignore[arg-type]
+            rng,
         )
         member_indices_by_species_id: dict[SpeciesId, list[int]] = {}
         for genome_index, assigned_species_id in enumerate(species_id_per_genome_index):
@@ -275,19 +276,32 @@ class NEATAlgorithm:
             )
             offspring_genomes.extend(elite_genomes_from_species)
 
+            (
+                surviving_member_genomes,
+                surviving_member_fitnesses,
+            ) = self._truncate_species_to_reproduction_survivors(
+                member_genomes_in_species=member_genomes_in_species,
+                member_fitnesses_in_species=member_fitnesses_in_species,
+            )
+
             remaining_offspring_slots_to_fill_for_species = (
                 species_state.offspring_slot_count - len(elite_genomes_from_species)
             )
             for _slot_index in range(max(0, remaining_offspring_slots_to_fill_for_species)):
                 child_genome = self._produce_single_child_from_species(
-                    member_genomes_in_species=member_genomes_in_species,
-                    member_fitnesses_in_species=member_fitnesses_in_species,
+                    reproducing_member_genomes=surviving_member_genomes,
+                    reproducing_member_fitnesses=surviving_member_fitnesses,
+                    all_genomes_in_population=neat_genomes_in_current_population,
+                    all_fitnesses_in_population=fitnesses_of_current_population,
                     rng=rng,
                 )
                 offspring_genomes.append(child_genome)
 
+        overall_best_genome_in_current_population = neat_genomes_in_current_population[
+            fitnesses_of_current_population.index(max(fitnesses_of_current_population))
+        ]
         while len(offspring_genomes) < self.config.population_size:
-            offspring_genomes.append(neat_genomes_in_current_population[0])
+            offspring_genomes.append(overall_best_genome_in_current_population)
         offspring_genomes = offspring_genomes[: self.config.population_size]
 
         next_generation_population = Population(
@@ -405,23 +419,57 @@ class NEATAlgorithm:
         non_stagnated_species_states: list[_SpeciesReproductionState],
         total_offspring_slots_available: int,
     ) -> None:
-        sum_of_mean_adjusted_fitnesses = sum(
-            max(0.0, species_state.mean_adjusted_fitness)
+        """Distribute offspring slots proportionally to each species' summed adjusted fitness.
+
+        The paper assigns each species a share proportional to the *sum* of its
+        members' adjusted fitnesses (equivalently: the species' mean raw
+        fitness). Using the mean adjusted fitness instead would divide by the
+        species size twice and starve large, well-performing species.
+        Largest-remainder rounding keeps the slot total exact.
+        """
+        total_adjusted_fitness_per_species = [
+            max(0.0, sum(species_state.adjusted_fitnesses))
             for species_state in non_stagnated_species_states
-        )
-        if sum_of_mean_adjusted_fitnesses <= 0.0:
+        ]
+        sum_of_total_adjusted_fitnesses = sum(total_adjusted_fitness_per_species)
+
+        if sum_of_total_adjusted_fitnesses <= 0.0:
             equal_share = total_offspring_slots_available // len(non_stagnated_species_states)
-            for species_state in non_stagnated_species_states:
-                species_state.offspring_slot_count = equal_share
+            leftover_slots = total_offspring_slots_available - equal_share * len(
+                non_stagnated_species_states
+            )
+            for species_index, species_state in enumerate(non_stagnated_species_states):
+                species_state.offspring_slot_count = equal_share + (
+                    1 if species_index < leftover_slots else 0
+                )
             return
 
-        for species_state in non_stagnated_species_states:
-            proportional_share = (
-                max(0.0, species_state.mean_adjusted_fitness) / sum_of_mean_adjusted_fitnesses
-            )
-            species_state.offspring_slot_count = int(
-                round(proportional_share * total_offspring_slots_available)
-            )
+        exact_proportional_shares = [
+            species_total
+            / sum_of_total_adjusted_fitnesses
+            * total_offspring_slots_available
+            for species_total in total_adjusted_fitness_per_species
+        ]
+        for species_state, exact_share in zip(
+            non_stagnated_species_states, exact_proportional_shares, strict=True
+        ):
+            species_state.offspring_slot_count = int(exact_share)
+
+        remaining_slots_after_flooring = total_offspring_slots_available - sum(
+            species_state.offspring_slot_count
+            for species_state in non_stagnated_species_states
+        )
+        species_indices_by_descending_fractional_part = sorted(
+            range(len(non_stagnated_species_states)),
+            key=lambda index: (
+                exact_proportional_shares[index] - int(exact_proportional_shares[index])
+            ),
+            reverse=True,
+        )
+        for species_index in species_indices_by_descending_fractional_part[
+            :remaining_slots_after_flooring
+        ]:
+            non_stagnated_species_states[species_index].offspring_slot_count += 1
 
     def _pick_elite_genomes_from_species(
         self,
@@ -442,30 +490,102 @@ class NEATAlgorithm:
             ]
         ]
 
-    def _produce_single_child_from_species(
+    def _truncate_species_to_reproduction_survivors(
         self,
         member_genomes_in_species: list[NEATGenome],
         member_fitnesses_in_species: list[FitnessValue],
+    ) -> tuple[list[NEATGenome], list[FitnessValue]]:
+        """Keep only the top fraction of a species as reproduction candidates.
+
+        The paper eliminates the lowest performing members before reproduction;
+        Stanley's reference implementation keeps the top ``survival_thresh``
+        fraction (0.2 by default). At least two members are kept when available
+        so within-species crossover stays possible.
+        """
+        species_member_count = len(member_genomes_in_species)
+        surviving_member_count = min(
+            species_member_count,
+            max(
+                2,
+                math.ceil(
+                    self.config.species_survival_fraction_for_reproduction
+                    * species_member_count
+                ),
+            ),
+        )
+        member_indices_sorted_by_fitness_descending = sorted(
+            range(species_member_count),
+            key=lambda index: member_fitnesses_in_species[index],
+            reverse=True,
+        )
+        surviving_member_indices = member_indices_sorted_by_fitness_descending[
+            :surviving_member_count
+        ]
+        return (
+            [member_genomes_in_species[index] for index in surviving_member_indices],
+            [member_fitnesses_in_species[index] for index in surviving_member_indices],
+        )
+
+    def _select_single_parent_with_fitness(
+        self,
+        candidate_genomes: list[NEATGenome],
+        candidate_fitnesses: list[FitnessValue],
+        rng: Generator,
+    ) -> tuple[NEATGenome, FitnessValue]:
+        selected_parent_genome = self.parent_selection.select_parents(
+            candidate_genomes=candidate_genomes,  # type: ignore[arg-type]
+            candidate_fitnesses=candidate_fitnesses,
+            number_of_parents_to_select=1,
+            rng=rng,
+        )[0]
+        selected_parent_fitness = candidate_fitnesses[
+            candidate_genomes.index(selected_parent_genome)  # type: ignore[arg-type]
+        ]
+        return selected_parent_genome, selected_parent_fitness  # type: ignore[return-value]
+
+    def _produce_single_child_from_species(
+        self,
+        reproducing_member_genomes: list[NEATGenome],
+        reproducing_member_fitnesses: list[FitnessValue],
+        all_genomes_in_population: list[NEATGenome],
+        all_fitnesses_in_population: list[FitnessValue],
         rng: Generator,
     ) -> NEATGenome:
-        should_use_crossover = (
-            len(member_genomes_in_species) >= 2
-            and rng.random() < self.config.probability_of_crossover_vs_mutation_only
+        wants_crossover = (
+            rng.random() < self.config.probability_of_crossover_vs_mutation_only
         )
-        if should_use_crossover:
-            selected_parents = self.parent_selection.select_parents(
-                candidate_genomes=member_genomes_in_species,  # type: ignore[arg-type]
-                candidate_fitnesses=member_fitnesses_in_species,
-                number_of_parents_to_select=2,
+        is_interspecies_mating = (
+            wants_crossover
+            and len(all_genomes_in_population) >= 2
+            and rng.random() < self.config.probability_of_interspecies_mating
+        )
+        crossover_is_possible = is_interspecies_mating or len(reproducing_member_genomes) >= 2
+
+        if wants_crossover and crossover_is_possible:
+            first_parent_genome, first_parent_fitness = self._select_single_parent_with_fitness(
+                candidate_genomes=reproducing_member_genomes,
+                candidate_fitnesses=reproducing_member_fitnesses,
                 rng=rng,
             )
-            first_parent_genome, second_parent_genome = selected_parents
-            first_parent_fitness = member_fitnesses_in_species[
-                member_genomes_in_species.index(first_parent_genome)  # type: ignore[arg-type]
-            ]
-            second_parent_fitness = member_fitnesses_in_species[
-                member_genomes_in_species.index(second_parent_genome)  # type: ignore[arg-type]
-            ]
+            if is_interspecies_mating:
+                # Interspecies mating (rate 0.001 in the paper): the second
+                # parent is drawn from the entire population, ignoring species
+                # boundaries.
+                second_parent_genome, second_parent_fitness = (
+                    self._select_single_parent_with_fitness(
+                        candidate_genomes=all_genomes_in_population,
+                        candidate_fitnesses=all_fitnesses_in_population,
+                        rng=rng,
+                    )
+                )
+            else:
+                second_parent_genome, second_parent_fitness = (
+                    self._select_single_parent_with_fitness(
+                        candidate_genomes=reproducing_member_genomes,
+                        candidate_fitnesses=reproducing_member_fitnesses,
+                        rng=rng,
+                    )
+                )
             if first_parent_fitness >= second_parent_fitness:
                 fitter_parent, less_fit_parent = first_parent_genome, second_parent_genome
             else:
@@ -476,13 +596,11 @@ class NEATAlgorithm:
                 rng=rng,
             )
         else:
-            selected_parents = self.parent_selection.select_parents(
-                candidate_genomes=member_genomes_in_species,  # type: ignore[arg-type]
-                candidate_fitnesses=member_fitnesses_in_species,
-                number_of_parents_to_select=1,
+            crossover_child_genome, _ = self._select_single_parent_with_fitness(
+                candidate_genomes=reproducing_member_genomes,
+                candidate_fitnesses=reproducing_member_fitnesses,
                 rng=rng,
             )
-            crossover_child_genome = selected_parents[0]
 
         mutated_child_genome = self.mutation.apply_to_genome(
             genome=crossover_child_genome,

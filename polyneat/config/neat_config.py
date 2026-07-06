@@ -34,12 +34,19 @@ class NEATConfig(AlgorithmConfig):
     # Crossover
     probability_of_crossover_vs_mutation_only: float = 0.75
     probability_of_inheriting_from_fitter_parent_for_matching_genes: float = 0.5
+    probability_of_interspecies_mating: float = 0.001
 
     # Selection
     tournament_size_for_parent_selection: int = 3
+    species_survival_fraction_for_reproduction: float = 0.2
 
     # Activation functions
-    available_activation_functions: tuple[str, ...] = ("sigmoid", "tanh", "relu")
+    available_activation_functions: tuple[str, ...] = (
+        "sigmoid",
+        "steepened_sigmoid",
+        "tanh",
+        "relu",
+    )
     default_activation_function_for_hidden_nodes: str = "sigmoid"
     default_activation_function_for_output_nodes: str = "sigmoid"
 
@@ -53,12 +60,18 @@ class NEATConfig(AlgorithmConfig):
             "probability_of_toggle_connection_enabled",
             "probability_of_crossover_vs_mutation_only",
             "probability_of_inheriting_from_fitter_parent_for_matching_genes",
+            "probability_of_interspecies_mating",
         ):
             value = getattr(self, prob_field)
             if not (0.0 <= value <= 1.0):
                 raise ConfigurationError(
                     f"{prob_field} must be in [0.0, 1.0], got {value}"
                 )
+        if not (0.0 < self.species_survival_fraction_for_reproduction <= 1.0):
+            raise ConfigurationError(
+                f"species_survival_fraction_for_reproduction must be in (0.0, 1.0], "
+                f"got {self.species_survival_fraction_for_reproduction}"
+            )
         if self.initial_weight_range_min >= self.initial_weight_range_max:
             raise ConfigurationError(
                 f"initial_weight_range_min ({self.initial_weight_range_min}) must be "
