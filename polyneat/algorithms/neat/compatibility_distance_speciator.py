@@ -15,8 +15,6 @@ logger = get_logger(__name__)
 class SpeciesRepresentative:
     species_id: SpeciesId
     representative_genome: NEATGenome
-    generations_since_last_improvement: int = 0
-    best_adjusted_fitness_ever: float = float("-inf")
     member_genome_count_in_current_generation: int = 0
     member_indices_in_current_generation: list[int] = field(default_factory=list)
 
@@ -199,11 +197,3 @@ class CompatibilityDistanceSpeciator:
             + self._coefficient_weight_difference_c3 * mean_matching_weight_difference
         )
         return compatibility_distance_value
-
-    def species_representatives_snapshot(self) -> list[SpeciesRepresentative]:
-        """Return the current internal species representative list.
-
-        Consumers (e.g. NEATAlgorithm) use this to compute per-species offspring
-        allocations and elitism.
-        """
-        return list(self._species_representatives_from_previous_generation)
