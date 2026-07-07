@@ -4,6 +4,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from statistics import mean, median
+from typing import cast
 
 import torch
 from numpy.random import Generator
@@ -28,6 +29,7 @@ from polyneat.algorithms.neat.tournament_parent_selection import TournamentParen
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
+    Genome,
     MutationOperator,
     ParentSelection,
     PhenotypeBuilder,
@@ -62,10 +64,10 @@ class NEATAlgorithm:
     """Vanilla NEAT (Stanley & Miikkulainen, 2002) as a composition of protocol-conforming components."""
 
     config: NEATConfig
-    mutation: MutationOperator
-    crossover: CrossoverOperator
-    parent_selection: ParentSelection
-    speciator: Speciator
+    mutation: MutationOperator[NEATGenome]
+    crossover: CrossoverOperator[NEATGenome]
+    parent_selection: ParentSelection[NEATGenome]
+    speciator: Speciator[NEATGenome]
     innovation_tracker: GlobalInnovationTracker
     _phenotype_builder: NEATPhenotypeBuilder
     _species_stagnation_bookkeeping: dict[SpeciesId, _SpeciesReproductionState] = field(
@@ -227,13 +229,12 @@ class NEATAlgorithm:
     ) -> tuple[Population, GenerationStatistics]:
         generation_start_wall_time = time.perf_counter()
 
-        neat_genomes_in_current_population: list[NEATGenome] = [
-            genome  # type: ignore[misc]
-            for genome in current_population.genomes
-        ]
+        neat_genomes_in_current_population = cast(
+            "list[NEATGenome]", current_population.genomes
+        )
 
         species_id_per_genome_index = self.speciator.assign_genomes_to_species(
-            neat_genomes_in_current_population,  # type: ignore[arg-type]
+            neat_genomes_in_current_population,
             rng,
         )
         member_indices_by_species_id: dict[SpeciesId, list[int]] = {}
@@ -305,7 +306,7 @@ class NEATAlgorithm:
         offspring_genomes = offspring_genomes[: self.config.population_size]
 
         next_generation_population = Population(
-            genomes=offspring_genomes,  # type: ignore[arg-type]
+            genomes=cast("list[Genome]", offspring_genomes),
             species_assignments=None,
             generation_number=current_population.generation_number + 1,
         )
@@ -533,15 +534,15 @@ class NEATAlgorithm:
         rng: Generator,
     ) -> tuple[NEATGenome, FitnessValue]:
         selected_parent_genome = self.parent_selection.select_parents(
-            candidate_genomes=candidate_genomes,  # type: ignore[arg-type]
+            candidate_genomes=candidate_genomes,
             candidate_fitnesses=candidate_fitnesses,
             number_of_parents_to_select=1,
             rng=rng,
         )[0]
         selected_parent_fitness = candidate_fitnesses[
-            candidate_genomes.index(selected_parent_genome)  # type: ignore[arg-type]
+            candidate_genomes.index(selected_parent_genome)
         ]
-        return selected_parent_genome, selected_parent_fitness  # type: ignore[return-value]
+        return selected_parent_genome, selected_parent_fitness
 
     def _produce_single_child_from_species(
         self,
@@ -607,4 +608,4 @@ class NEATAlgorithm:
             rng=rng,
             innovation_tracker=self.innovation_tracker,
         )
-        return mutated_child_genome  # type: ignore[return-value]
+        return mutated_child_genome

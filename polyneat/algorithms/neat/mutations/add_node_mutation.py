@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.core.component_protocols import InnovationTracker
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +33,7 @@ class AddNodeMutation:
         self,
         genome: NEATGenome,
         rng: Generator,
-        innovation_tracker: GlobalInnovationTracker,
+        innovation_tracker: InnovationTracker,
     ) -> NEATGenome:
         if rng.random() >= self._probability_of_application:
             return genome

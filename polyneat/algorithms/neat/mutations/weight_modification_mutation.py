@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome
+from polyneat.core.component_protocols import InnovationTracker
 
 
 class WeightModificationMutation:
@@ -38,7 +38,7 @@ class WeightModificationMutation:
         self,
         genome: NEATGenome,
         rng: Generator,
-        innovation_tracker: GlobalInnovationTracker,
+        innovation_tracker: InnovationTracker,
     ) -> NEATGenome:
         new_connection_genes: list[ConnectionGene] = []
         for existing_connection_gene in genome.connection_genes:

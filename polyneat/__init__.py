@@ -29,6 +29,7 @@ from polyneat.core.component_protocols import (
     CrossoverOperator,
     FitnessEvaluator,
     Genome,
+    InnovationTracker,
     MutationOperator,
     NeuroevolutionAlgorithm,
     ParentSelection,
@@ -82,6 +83,7 @@ __all__ = [
     "ParentSelection",
     "Speciator",
     "FitnessEvaluator",
+    "InnovationTracker",
     "NeuroevolutionAlgorithm",
     # Data types
     "Population",
