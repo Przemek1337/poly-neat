@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 
 import matplotlib
 import networkx
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as pyplot  # noqa: E402  (must follow matplotlib.use)
 
 from polyneat.logging_utils.custom_logger import get_logger
 
@@ -15,6 +12,17 @@ if TYPE_CHECKING:
     from polyneat.core.component_protocols import Genome
 
 logger = get_logger(__name__)
+
+
+class _NeatShapedGenome(Protocol):
+    """Structural type for genomes the renderer can draw.
+
+    Any genome exposing ``node_genes`` and ``connection_genes`` sequences of
+    NEAT-style genes can be rendered, regardless of its concrete class.
+    """
+
+    node_genes: tuple[Any, ...]
+    connection_genes: tuple[Any, ...]
 
 NODE_TYPE_TO_FILL_COLOR: dict[str, str] = {
     "input": "#4fc3f7",
@@ -40,15 +48,18 @@ def render_genome_topology(genome: "Genome", output_path: Path) -> None:
         )
         return
 
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as pyplot
+
     directed_graph = networkx.DiGraph()
     node_id_to_fill_color: dict[int, str] = {}
-    for node_gene in genome.node_genes:  # type: ignore[attr-defined]
+    for node_gene in genome.node_genes:
         directed_graph.add_node(node_gene.node_id)
         node_id_to_fill_color[node_gene.node_id] = NODE_TYPE_TO_FILL_COLOR.get(
             node_gene.node_type, UNKNOWN_NODE_TYPE_FILL_COLOR
         )
 
-    for connection_gene in genome.connection_genes:  # type: ignore[attr-defined]
+    for connection_gene in genome.connection_genes:
         if connection_gene.is_enabled:
             directed_graph.add_edge(
                 connection_gene.source_node_id,
@@ -80,5 +91,5 @@ def render_genome_topology(genome: "Genome", output_path: Path) -> None:
     pyplot.close()
 
 
-def _genome_has_neat_shape(genome: object) -> bool:
+def _genome_has_neat_shape(genome: object) -> TypeGuard[_NeatShapedGenome]:
     return hasattr(genome, "node_genes") and hasattr(genome, "connection_genes")

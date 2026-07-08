@@ -73,12 +73,12 @@ class AddConnectionMutation:
         ]
 
         for _attempt_index in range(self._maximum_number_of_random_attempts_per_call):
-            candidate_source_node_id = int(
-                rng.choice(eligible_source_node_ids)  # type: ignore[arg-type]
-            )
-            candidate_target_node_id = int(
-                rng.choice(eligible_target_node_ids)  # type: ignore[arg-type]
-            )
+            candidate_source_node_id = eligible_source_node_ids[
+                int(rng.integers(0, len(eligible_source_node_ids)))
+            ]
+            candidate_target_node_id = eligible_target_node_ids[
+                int(rng.integers(0, len(eligible_target_node_ids)))
+            ]
 
             if candidate_source_node_id == candidate_target_node_id:
                 continue

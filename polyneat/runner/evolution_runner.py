@@ -4,7 +4,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, cast
 
 from polyneat.core.component_protocols import (
     FitnessEvaluator,
@@ -134,7 +134,10 @@ class EvolutionRunner:
                 )
 
             if self._termination_criterion.should_terminate_evolution(run_context):
-                termination_reason_label = self._termination_criterion.termination_reason_label  # type: ignore[assignment]
+                termination_reason_label = cast(
+                    TerminationReason,
+                    self._termination_criterion.termination_reason_label,
+                )
                 current_population = new_population
                 break
 
