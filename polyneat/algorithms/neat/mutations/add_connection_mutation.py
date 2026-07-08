@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome
+from polyneat.core.component_protocols import InnovationTracker
 from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
 
@@ -42,7 +42,7 @@ class AddConnectionMutation:
         self,
         genome: NEATGenome,
         rng: Generator,
-        innovation_tracker: GlobalInnovationTracker,
+        innovation_tracker: InnovationTracker,
     ) -> NEATGenome:
         if rng.random() >= self._probability_of_application:
             return genome
@@ -73,12 +73,12 @@ class AddConnectionMutation:
         ]
 
         for _attempt_index in range(self._maximum_number_of_random_attempts_per_call):
-            candidate_source_node_id = int(
-                rng.choice(eligible_source_node_ids)  # type: ignore[arg-type]
-            )
-            candidate_target_node_id = int(
-                rng.choice(eligible_target_node_ids)  # type: ignore[arg-type]
-            )
+            candidate_source_node_id = eligible_source_node_ids[
+                int(rng.integers(0, len(eligible_source_node_ids)))
+            ]
+            candidate_target_node_id = eligible_target_node_ids[
+                int(rng.integers(0, len(eligible_target_node_ids)))
+            ]
 
             if candidate_source_node_id == candidate_target_node_id:
                 continue

@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 import torch
 from numpy.random import Generator
@@ -31,11 +31,12 @@ class Phenotype(Protocol):
     def reset_recurrent_state(self) -> None: ...
 
 
-@runtime_checkable
-class PhenotypeBuilder(Protocol):
-    """Maps Genome â†’ Phenotype. Different builders for different encodings."""
-
-    def build_phenotype_from_genome(self, genome: Genome) -> Phenotype: ...
+# Operator protocols below are generic over the concrete genome type they act on.
+# Each NEAT-family algorithm shares the same operator interfaces but plugs in its
+# own genome encoding (NEATGenome, a CPPN genome for HyperNEAT, ...). Binding to a
+# TypeVar lets a concrete operator declare ``MutationOperator[NEATGenome]`` and get
+# real static checking instead of erasing everything to the ``Genome`` base.
+GenomeType = TypeVar("GenomeType", bound=Genome)
 
 
 @runtime_checkable
@@ -50,44 +51,51 @@ class InnovationTracker(Protocol):
 
 
 @runtime_checkable
-class MutationOperator(Protocol):
+class PhenotypeBuilder(Protocol[GenomeType]):
+    """Maps Genome -> Phenotype. Different builders for different encodings."""
+
+    def build_phenotype_from_genome(self, genome: GenomeType) -> Phenotype: ...
+
+
+@runtime_checkable
+class MutationOperator(Protocol[GenomeType]):
     """A single mutation, as a pure function (deterministic given RNG)."""
 
     def apply_to_genome(
         self,
-        genome: Genome,
+        genome: GenomeType,
         rng: Generator,
         innovation_tracker: InnovationTracker,
-    ) -> Genome: ...
+    ) -> GenomeType: ...
 
 
 @runtime_checkable
-class CrossoverOperator(Protocol):
+class CrossoverOperator(Protocol[GenomeType]):
     def apply_to_parents(
         self,
-        fitter_parent: Genome,
-        less_fit_parent: Genome,
+        fitter_parent: GenomeType,
+        less_fit_parent: GenomeType,
         rng: Generator,
-    ) -> Genome: ...
+    ) -> GenomeType: ...
 
 
 @runtime_checkable
-class ParentSelection(Protocol):
+class ParentSelection(Protocol[GenomeType]):
     def select_parents(
         self,
-        candidate_genomes: list[Genome],
+        candidate_genomes: list[GenomeType],
         candidate_fitnesses: list[FitnessValue],
         number_of_parents_to_select: int,
         rng: Generator,
-    ) -> list[Genome]: ...
+    ) -> list[GenomeType]: ...
 
 
 @runtime_checkable
-class Speciator(Protocol):
+class Speciator(Protocol[GenomeType]):
     """Assigns each genome to a species."""
 
     def assign_genomes_to_species(
-        self, genomes: list[Genome], rng: Generator
+        self, genomes: list[GenomeType], rng: Generator
     ) -> list[SpeciesId]: ...
 
 
@@ -102,7 +110,7 @@ class FitnessEvaluator(Protocol):
 
 @runtime_checkable
 class NeuroevolutionAlgorithm(Protocol):
-    """The algorithm â€” composes the protocols above."""
+    """The algorithm - composes the protocols above."""
 
     def create_initial_population(self, rng: Generator) -> "Population": ...
 

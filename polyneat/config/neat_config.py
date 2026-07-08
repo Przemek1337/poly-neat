@@ -47,8 +47,8 @@ class NEATConfig(AlgorithmConfig):
         "tanh",
         "relu",
     )
-    default_activation_function_for_hidden_nodes: str = "sigmoid"
-    default_activation_function_for_output_nodes: str = "sigmoid"
+    default_activation_function_for_hidden_nodes: str = "steepened_sigmoid"
+    default_activation_function_for_output_nodes: str = "steepened_sigmoid"
 
     def validate(self) -> None:
         super().validate()

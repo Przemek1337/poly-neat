@@ -4,6 +4,7 @@ import logging
 import sys
 import uuid
 from pathlib import Path
+from typing import cast
 
 from polyneat.logging_utils.colored_level_formatter import ColoredLevelFormatter
 from polyneat.logging_utils.logging_config import LoggingConfig
@@ -48,7 +49,7 @@ class CustomLogger(logging.Logger):
         self.addHandler(stream_handler)
 
     def _attach_file_handler(self, active_config: LoggingConfig) -> None:
-        log_directory_path = Path(active_config.file_log_directory)  # type: ignore[arg-type]
+        log_directory_path = Path(cast(str, active_config.file_log_directory))
         log_directory_path.mkdir(parents=True, exist_ok=True)
         log_file_path = log_directory_path / f"polyneat_{uuid.uuid4()}.log"
         file_handler = logging.FileHandler(
@@ -67,4 +68,4 @@ def get_logger(logger_name: str) -> CustomLogger:
     Because ``logging.setLoggerClass(CustomLogger)`` runs at module import
     time, the returned logger is always a ``CustomLogger`` instance.
     """
-    return logging.getLogger(logger_name)  # type: ignore[return-value]
+    return cast(CustomLogger, logging.getLogger(logger_name))

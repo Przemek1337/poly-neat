@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.core.component_protocols import MutationOperator
+from polyneat.core.component_protocols import InnovationTracker, MutationOperator
 
 
 class CompositeNEATMutation:
@@ -20,18 +19,20 @@ class CompositeNEATMutation:
     Each operator decides internally whether it actually fires.
     """
 
-    def __init__(self, ordered_individual_mutations: list[MutationOperator]) -> None:
+    def __init__(
+        self, ordered_individual_mutations: list[MutationOperator[NEATGenome]]
+    ) -> None:
         self._ordered_individual_mutations = ordered_individual_mutations
 
     def apply_to_genome(
         self,
         genome: NEATGenome,
         rng: Generator,
-        innovation_tracker: GlobalInnovationTracker,
+        innovation_tracker: InnovationTracker,
     ) -> NEATGenome:
         current_genome = genome
         for individual_mutation_operator in self._ordered_individual_mutations:
-            current_genome = individual_mutation_operator.apply_to_genome(  # type: ignore[assignment]
+            current_genome = individual_mutation_operator.apply_to_genome(
                 current_genome,
                 rng,
                 innovation_tracker,
