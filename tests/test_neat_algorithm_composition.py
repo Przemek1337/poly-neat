@@ -13,7 +13,7 @@ from polyneat.algorithms.neat.mutations.composite_neat_mutation import Composite
 from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
 from polyneat.algorithms.neat.neat_crossover import NEATCrossover
 from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.algorithms.neat.neat_phenotype_builder import NEATPhenotypeBuilder
+from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import InnovationTracker
@@ -39,12 +39,12 @@ class _SingleSpeciesSpeciator:
         return [0] * len(genomes)
 
 
-class _PassthroughPhenotypeBuilder:
+class _PassthroughPhenotypeDecoder:
     def build_phenotype_from_genome(self, genome):
         raise NotImplementedError("structural stand-in, never called in this test")
 
 
-def _sentinel_initial_population_builder(config, innovation_tracker, rng) -> Population:
+def _sentinel_initial_population_factory(config, innovation_tracker, rng) -> Population:
     return Population(genomes=[], species_assignments=None, generation_number=0)
 
 
@@ -57,26 +57,26 @@ def test_from_config_defaults_build_standard_components(
     assert isinstance(algorithm.parent_selection, TournamentParentSelection)
     assert isinstance(algorithm.speciator, CompatibilityDistanceSpeciator)
     assert isinstance(algorithm.innovation_tracker, GlobalInnovationTracker)
-    assert isinstance(algorithm.phenotype_builder, NEATPhenotypeBuilder)
-    assert algorithm.initial_population_builder is None
+    assert isinstance(algorithm.phenotype_decoder, NEATPhenotypeDecoder)
+    assert algorithm.initial_population_factory is None
 
 
 def test_replace_swaps_selected_components_and_keeps_the_rest(
     small_neat_config: NEATConfig,
 ) -> None:
     custom_mutation = _IdentityMutation()
-    custom_builder = _PassthroughPhenotypeBuilder()
+    custom_decoder = _PassthroughPhenotypeDecoder()
 
     algorithm = dataclasses.replace(
         NEATAlgorithm.from_config(small_neat_config),
         mutation=custom_mutation,
-        _phenotype_builder=custom_builder,
-        initial_population_builder=_sentinel_initial_population_builder,
+        _phenotype_decoder=custom_decoder,
+        initial_population_factory=_sentinel_initial_population_factory,
     )
     # Swapped components are the ones we passed.
     assert algorithm.mutation is custom_mutation
-    assert algorithm.phenotype_builder is custom_builder
-    assert algorithm.initial_population_builder is _sentinel_initial_population_builder
+    assert algorithm.phenotype_decoder is custom_decoder
+    assert algorithm.initial_population_factory is _sentinel_initial_population_factory
     # Untouched components carry over from the vanilla-NEAT build.
     assert isinstance(algorithm.crossover, NEATCrossover)
     assert isinstance(algorithm.parent_selection, TournamentParentSelection)

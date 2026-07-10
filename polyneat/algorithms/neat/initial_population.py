@@ -9,8 +9,12 @@ from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import InnovationTracker
 from polyneat.core.population import Population
 
-
-InitialPopulationBuilder = Callable[[NEATConfig, InnovationTracker, Generator], Population]
+# Signature every initial-population factory must match. Set it on
+# ``NEATAlgorithm.initial_population_factory`` (via ``dataclasses.replace`` or direct
+# assignment) to change how generation 0 is built without subclassing. A plain
+# callable, so the default is a free function; a factory needing state is a class
+# with ``__call__``.
+InitialPopulationCallable = Callable[[NEATConfig, InnovationTracker, Generator], Population]
 
 
 def build_fully_connected_initial_population(

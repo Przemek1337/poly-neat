@@ -6,8 +6,8 @@ from polyneat.algorithms.neat.neat_genome import NEATGenome
 from polyneat.algorithms.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
 
 
-class NEATPhenotypeBuilder:
-    """Builds a ``TorchFeedForwardPhenotype`` from a ``NEATGenome``."""
+class NEATPhenotypeDecoder:
+    """Decodes a ``NEATGenome`` into an executable ``TorchFeedForwardPhenotype``."""
 
     def __init__(self, device_for_computation: torch.device = torch.device("cpu")) -> None:
         self._device_for_computation = device_for_computation

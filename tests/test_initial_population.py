@@ -12,7 +12,7 @@ from polyneat.config.neat_config import NEATConfig
 from polyneat.core.population import Population
 
 
-def test_builder_produces_fully_connected_population(
+def test_factory_produces_fully_connected_population(
     small_neat_config: NEATConfig, rng: np.random.Generator
 ) -> None:
     population = build_fully_connected_initial_population(
@@ -37,7 +37,7 @@ def test_builder_produces_fully_connected_population(
         assert all(connection.is_enabled for connection in genome.connection_genes)
 
 
-def test_builder_assigns_identical_innovation_ids_across_genomes(
+def test_factory_assigns_identical_innovation_ids_across_genomes(
     small_neat_config: NEATConfig, rng: np.random.Generator
 ) -> None:
     population = build_fully_connected_initial_population(
@@ -58,7 +58,7 @@ def test_builder_assigns_identical_innovation_ids_across_genomes(
         assert genome_innovation_ids == reference_innovation_ids
 
 
-def test_algorithm_delegates_to_builder(
+def test_algorithm_delegates_to_factory(
     small_neat_config: NEATConfig, rng: np.random.Generator
 ) -> None:
     algorithm = NEATAlgorithm.from_config(small_neat_config)
@@ -67,14 +67,14 @@ def test_algorithm_delegates_to_builder(
     assert population.generation_number == 0
 
 
-def test_algorithm_uses_custom_initial_population_builder(
+def test_algorithm_uses_custom_initial_population_factory(
     small_neat_config: NEATConfig, rng: np.random.Generator
 ) -> None:
     sentinel_population = Population(genomes=[], species_assignments=None, generation_number=0)
 
-    def sentinel_builder(config, innovation_tracker, builder_rng):
+    def sentinel_factory(config, innovation_tracker, factory_rng):
         return sentinel_population
 
     algorithm = NEATAlgorithm.from_config(small_neat_config)
-    algorithm.initial_population_builder = sentinel_builder
+    algorithm.initial_population_factory = sentinel_factory
     assert algorithm.create_initial_population(rng) is sentinel_population

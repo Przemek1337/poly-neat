@@ -14,7 +14,7 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.initial_population import (
-    InitialPopulationBuilder,
+    InitialPopulationCallable,
     build_fully_connected_initial_population,
 )
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
@@ -28,7 +28,7 @@ from polyneat.algorithms.neat.mutations.weight_modification_mutation import (
 )
 from polyneat.algorithms.neat.neat_crossover import NEATCrossover
 from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.algorithms.neat.neat_phenotype_builder import NEATPhenotypeBuilder
+from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
@@ -36,7 +36,7 @@ from polyneat.core.component_protocols import (
     Genome,
     MutationOperator,
     ParentSelection,
-    PhenotypeBuilder,
+    PhenotypeDecoder,
     Speciator,
 )
 from polyneat.core.generation_statistics import GenerationStatistics
@@ -73,15 +73,15 @@ class NEATAlgorithm:
     parent_selection: ParentSelection[NEATGenome]
     speciator: Speciator[NEATGenome]
     innovation_tracker: GlobalInnovationTracker
-    _phenotype_builder: PhenotypeBuilder[NEATGenome]
-    initial_population_builder: InitialPopulationBuilder | None = None
+    _phenotype_decoder: PhenotypeDecoder[NEATGenome]
+    initial_population_factory: InitialPopulationCallable | None = None
     _species_stagnation_bookkeeping: dict[SpeciesId, _SpeciesReproductionState] = field(
         default_factory=dict
     )
 
     @property
-    def phenotype_builder(self) -> PhenotypeBuilder:
-        return self._phenotype_builder
+    def phenotype_decoder(self) -> PhenotypeDecoder:
+        return self._phenotype_decoder
 
     @classmethod
     def from_config(
@@ -135,7 +135,7 @@ class NEATAlgorithm:
             compatibility_threshold=config.compatibility_distance_threshold,
         )
         innovation_tracker = GlobalInnovationTracker()
-        phenotype_builder = NEATPhenotypeBuilder(
+        phenotype_decoder = NEATPhenotypeDecoder(
             device_for_computation=resolved_device,
         )
 
@@ -146,12 +146,12 @@ class NEATAlgorithm:
             parent_selection=tournament_selection,
             speciator=speciator,
             innovation_tracker=innovation_tracker,
-            _phenotype_builder=phenotype_builder,
+            _phenotype_decoder=phenotype_decoder,
         )
 
     def create_initial_population(self, rng: Generator) -> Population:
-        if self.initial_population_builder is not None:
-            return self.initial_population_builder(self.config, self.innovation_tracker, rng)
+        if self.initial_population_factory is not None:
+            return self.initial_population_factory(self.config, self.innovation_tracker, rng)
         return build_fully_connected_initial_population(
             config=self.config,
             innovation_tracker=self.innovation_tracker,

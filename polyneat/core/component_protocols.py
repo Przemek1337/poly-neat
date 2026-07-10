@@ -60,8 +60,8 @@ class InnovationTracker(Protocol):
 
 
 @runtime_checkable
-class PhenotypeBuilder(Protocol[GenomeType]):
-    """Maps Genome -> Phenotype. Different builders for different encodings."""
+class PhenotypeDecoder(Protocol[GenomeType]):
+    """Maps Genome -> Phenotype. Different decoders for different encodings."""
 
     def build_phenotype_from_genome(self, genome: GenomeType) -> Phenotype: ...
 
@@ -131,4 +131,4 @@ class NeuroevolutionAlgorithm(Protocol):
     ) -> tuple["Population", "GenerationStatistics"]: ...
 
     @property
-    def phenotype_builder(self) -> PhenotypeBuilder: ...
+    def phenotype_decoder(self) -> PhenotypeDecoder: ...
