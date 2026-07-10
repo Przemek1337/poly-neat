@@ -9,10 +9,6 @@ probability of the correct class) for a dense selection signal, and the best
 genome is finally reported as classification accuracy on train and a held-out
 test subset.
 
-MNIST is a hard benchmark for topology-evolving networks, so expect only modest
-accuracy from this short demo — it exists to show the full pipeline on a real,
-multi-class dataset rather than to reach the state of the art.
-
 The dataset is downloaded once (as the standard Keras ``mnist.npz``) and cached
 under ``examples/mnist_data/``. Only numpy and torch are required.
 
@@ -40,13 +36,9 @@ _DATA_DIR = _THIS_DIR / "mnist_data"
 _ARTIFACTS_DIR = _THIS_DIR / "mnist_artifacts"
 _MNIST_NPZ_URL = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz"
 
-# Each 28x28 image is average-pooled to GRID x GRID pooled pixels. 28 must be
-# divisible by GRID so that pooling uses uniform blocks; GRID = 7 gives 49 inputs.
 GRID = 7
 NUMBER_OF_CLASSES = 10
 
-# Sizes of the random subsets used for fitness evaluation and final reporting.
-# Smaller subsets make each generation faster at the cost of noisier fitness.
 TRAINING_SUBSET_SIZE = 3000
 TEST_SUBSET_SIZE = 2000
 
@@ -149,15 +141,11 @@ def main() -> None:
     )
 
     config = pn.NEATConfig.load_from_yaml_file(_THIS_DIR / "mnist_neat.yaml")
-    # Keep the network's input/output width in sync with the pooled data, so
-    # changing GRID does not require editing the YAML.
     config.number_of_input_nodes = number_of_input_features
     config.number_of_output_nodes = NUMBER_OF_CLASSES
 
     algorithm = pn.NEATAlgorithm.from_config(config)
 
-    # Train on a smooth softmax-likelihood fitness (dense selection signal), then
-    # report the more interpretable classification accuracy on train and test.
     training_evaluator = _build_parallel_softmax_evaluator(train_features, train_labels)
 
     runner = pn.EvolutionRunner(
