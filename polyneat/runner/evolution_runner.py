@@ -91,7 +91,7 @@ class EvolutionRunner:
                 callback.on_generation_started(run_context, current_population)
 
             current_phenotypes = [
-                self._algorithm.phenotype_builder.build_phenotype_from_genome(genome)
+                self._algorithm.phenotype_decoder.build_phenotype_from_genome(genome)
                 for genome in current_population.genomes
             ]
 

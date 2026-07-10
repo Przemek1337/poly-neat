@@ -2,6 +2,9 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.algorithms.neat.initial_population import (
+    build_fully_connected_initial_population,
+)
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
 from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
@@ -19,7 +22,7 @@ from polyneat.algorithms.neat.neat_genome import (
     NEATGenome,
     NodeGene,
 )
-from polyneat.algorithms.neat.neat_phenotype_builder import NEATPhenotypeBuilder
+from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.algorithms.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
 from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.config.algorithm_config import AlgorithmConfig
@@ -34,7 +37,7 @@ from polyneat.core.component_protocols import (
     NeuroevolutionAlgorithm,
     ParentSelection,
     Phenotype,
-    PhenotypeBuilder,
+    PhenotypeDecoder,
     Speciator,
 )
 from polyneat.core.generation_statistics import GenerationStatistics
@@ -77,7 +80,7 @@ __all__ = [
     # Core protocols
     "Genome",
     "Phenotype",
-    "PhenotypeBuilder",
+    "PhenotypeDecoder",
     "MutationOperator",
     "CrossoverOperator",
     "ParentSelection",
@@ -118,12 +121,13 @@ __all__ = [
     "get_active_logging_config",
     # NEAT algorithm
     "NEATAlgorithm",
+    "build_fully_connected_initial_population",
     "NEATGenome",
     "NodeGene",
     "ConnectionGene",
     "InvalidGenomeError",
     "GlobalInnovationTracker",
-    "NEATPhenotypeBuilder",
+    "NEATPhenotypeDecoder",
     "TorchFeedForwardPhenotype",
     "NEATCrossover",
     "CompatibilityDistanceSpeciator",

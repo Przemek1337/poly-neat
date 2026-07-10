@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from typing import Generic
+
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import NEATGenome
+from polyneat.core.component_protocols import GenomeType
 from polyneat.core.type_aliases import FitnessValue
 
 
-class TournamentParentSelection:
+class TournamentParentSelection(Generic[GenomeType]):
     """K-way tournament: sample ``tournament_size`` candidates with replacement,
     return the one with the highest fitness.
 
@@ -23,11 +25,11 @@ class TournamentParentSelection:
 
     def select_parents(
         self,
-        candidate_genomes: list[NEATGenome],
+        candidate_genomes: list[GenomeType],
         candidate_fitnesses: list[FitnessValue],
         number_of_parents_to_select: int,
         rng: Generator,
-    ) -> list[NEATGenome]:
+    ) -> list[GenomeType]:
         if len(candidate_genomes) != len(candidate_fitnesses):
             raise ValueError(
                 f"TournamentParentSelection: candidate_genomes has length "
@@ -37,7 +39,7 @@ class TournamentParentSelection:
         if not candidate_genomes:
             raise ValueError("TournamentParentSelection: no candidate genomes given")
 
-        selected_parent_genomes: list[NEATGenome] = []
+        selected_parent_genomes: list[GenomeType] = []
         for _selection_step_index in range(number_of_parents_to_select):
             tournament_participant_indices = rng.integers(
                 low=0,

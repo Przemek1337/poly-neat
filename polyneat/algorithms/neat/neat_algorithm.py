@@ -13,6 +13,10 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.algorithms.neat.initial_population import (
+    InitialPopulationCallable,
+    build_fully_connected_initial_population,
+)
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
 from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
@@ -23,8 +27,8 @@ from polyneat.algorithms.neat.mutations.weight_modification_mutation import (
     WeightModificationMutation,
 )
 from polyneat.algorithms.neat.neat_crossover import NEATCrossover
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
-from polyneat.algorithms.neat.neat_phenotype_builder import NEATPhenotypeBuilder
+from polyneat.algorithms.neat.neat_genome import NEATGenome
+from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
@@ -32,7 +36,7 @@ from polyneat.core.component_protocols import (
     Genome,
     MutationOperator,
     ParentSelection,
-    PhenotypeBuilder,
+    PhenotypeDecoder,
     Speciator,
 )
 from polyneat.core.generation_statistics import GenerationStatistics
@@ -69,14 +73,15 @@ class NEATAlgorithm:
     parent_selection: ParentSelection[NEATGenome]
     speciator: Speciator[NEATGenome]
     innovation_tracker: GlobalInnovationTracker
-    _phenotype_builder: NEATPhenotypeBuilder
+    _phenotype_decoder: PhenotypeDecoder[NEATGenome]
+    initial_population_factory: InitialPopulationCallable | None = None
     _species_stagnation_bookkeeping: dict[SpeciesId, _SpeciesReproductionState] = field(
         default_factory=dict
     )
 
     @property
-    def phenotype_builder(self) -> PhenotypeBuilder:
-        return self._phenotype_builder
+    def phenotype_decoder(self) -> PhenotypeDecoder:
+        return self._phenotype_decoder
 
     @classmethod
     def from_config(
@@ -130,7 +135,7 @@ class NEATAlgorithm:
             compatibility_threshold=config.compatibility_distance_threshold,
         )
         innovation_tracker = GlobalInnovationTracker()
-        phenotype_builder = NEATPhenotypeBuilder(
+        phenotype_decoder = NEATPhenotypeDecoder(
             device_for_computation=resolved_device,
         )
 
@@ -141,84 +146,16 @@ class NEATAlgorithm:
             parent_selection=tournament_selection,
             speciator=speciator,
             innovation_tracker=innovation_tracker,
-            _phenotype_builder=phenotype_builder,
+            _phenotype_decoder=phenotype_decoder,
         )
 
     def create_initial_population(self, rng: Generator) -> Population:
-        input_node_id_range = range(self.config.number_of_input_nodes)
-        bias_node_id = self.config.number_of_input_nodes
-        output_node_id_range = range(
-            self.config.number_of_input_nodes + 1,
-            self.config.number_of_input_nodes + 1 + self.config.number_of_output_nodes,
-        )
-
-        input_node_genes = tuple(
-            NodeGene(
-                node_id=node_id,
-                node_type="input",
-                activation_function_name="identity",
-            )
-            for node_id in input_node_id_range
-        )
-        bias_node_gene = NodeGene(
-            node_id=bias_node_id,
-            node_type="bias",
-            activation_function_name="identity",
-        )
-        output_node_genes = tuple(
-            NodeGene(
-                node_id=node_id,
-                node_type="output",
-                activation_function_name=(
-                    self.config.default_activation_function_for_output_nodes
-                ),
-            )
-            for node_id in output_node_id_range
-        )
-
-        template_node_genes: tuple[NodeGene, ...] = (
-            input_node_genes + (bias_node_gene,) + output_node_genes
-        )
-
-        initial_genomes: list[NEATGenome] = []
-        for _individual_index in range(self.config.population_size):
-            initial_connection_genes: list[ConnectionGene] = []
-            for input_or_bias_node_id in [*input_node_id_range, bias_node_id]:
-                for output_node_id in output_node_id_range:
-                    innovation_id = (
-                        self.innovation_tracker.get_or_assign_innovation_id_for_connection(
-                            source_node_id=input_or_bias_node_id,
-                            target_node_id=output_node_id,
-                        )
-                    )
-                    initial_weight = float(
-                        rng.uniform(
-                            self.config.initial_weight_range_min,
-                            self.config.initial_weight_range_max,
-                        )
-                    )
-                    initial_connection_genes.append(
-                        ConnectionGene(
-                            innovation_id=innovation_id,
-                            source_node_id=input_or_bias_node_id,
-                            target_node_id=output_node_id,
-                            weight=initial_weight,
-                            is_enabled=True,
-                        )
-                    )
-            initial_genomes.append(
-                NEATGenome(
-                    node_genes=template_node_genes,
-                    connection_genes=tuple(initial_connection_genes),
-                )
-            )
-
-        self.innovation_tracker.reset_for_new_generation()
-
-        return Population(
-            genomes=initial_genomes,
-            species_assignments=None,
-            generation_number=0,
+        if self.initial_population_factory is not None:
+            return self.initial_population_factory(self.config, self.innovation_tracker, rng)
+        return build_fully_connected_initial_population(
+            config=self.config,
+            innovation_tracker=self.innovation_tracker,
+            rng=rng,
         )
 
     def advance_one_generation(
@@ -264,6 +201,7 @@ class NEATAlgorithm:
         )
 
         offspring_genomes: list[NEATGenome] = []
+        offspring_species_ids: list[SpeciesId] = []
         for species_state in non_stagnated_species_states:
             member_genomes_in_species = [
                 neat_genomes_in_current_population[member_index]
@@ -275,7 +213,11 @@ class NEATAlgorithm:
                 member_genomes_in_species=member_genomes_in_species,
                 member_fitnesses_in_species=member_fitnesses_in_species,
             )
+            
             offspring_genomes.extend(elite_genomes_from_species)
+            offspring_species_ids.extend(
+                [species_state.species_id] * len(elite_genomes_from_species)
+            )
 
             (
                 surviving_member_genomes,
@@ -297,17 +239,26 @@ class NEATAlgorithm:
                     rng=rng,
                 )
                 offspring_genomes.append(child_genome)
+                offspring_species_ids.append(species_state.species_id)
 
+        overall_best_genome_index = fitnesses_of_current_population.index(
+            max(fitnesses_of_current_population)
+        )
+        
         overall_best_genome_in_current_population = neat_genomes_in_current_population[
-            fitnesses_of_current_population.index(max(fitnesses_of_current_population))
+            overall_best_genome_index
         ]
+        
+        overall_best_genome_species_id = species_id_per_genome_index[overall_best_genome_index]
         while len(offspring_genomes) < self.config.population_size:
             offspring_genomes.append(overall_best_genome_in_current_population)
+            offspring_species_ids.append(overall_best_genome_species_id)
         offspring_genomes = offspring_genomes[: self.config.population_size]
+        offspring_species_ids = offspring_species_ids[: self.config.population_size]
 
         next_generation_population = Population(
             genomes=cast("list[Genome]", offspring_genomes),
-            species_assignments=None,
+            species_assignments=offspring_species_ids,
             generation_number=current_population.generation_number + 1,
         )
 

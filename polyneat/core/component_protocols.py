@@ -1,3 +1,12 @@
+"""Component protocols shared by every NEAT-family algorithm in PolyNEAT.
+
+Scope note: these interfaces are deliberately NEAT-family-wide, not
+algorithm-agnostic in general. Concepts that every NEAT variant shares —
+innovation tracking (historical markings), speciation, genome/phenotype
+separation — belong here. Anything specific to a single variant belongs in
+that variant's package under ``polyneat/algorithms/``.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
@@ -51,8 +60,8 @@ class InnovationTracker(Protocol):
 
 
 @runtime_checkable
-class PhenotypeBuilder(Protocol[GenomeType]):
-    """Maps Genome -> Phenotype. Different builders for different encodings."""
+class PhenotypeDecoder(Protocol[GenomeType]):
+    """Maps Genome -> Phenotype. Different decoders for different encodings."""
 
     def build_phenotype_from_genome(self, genome: GenomeType) -> Phenotype: ...
 
@@ -122,4 +131,4 @@ class NeuroevolutionAlgorithm(Protocol):
     ) -> tuple["Population", "GenerationStatistics"]: ...
 
     @property
-    def phenotype_builder(self) -> PhenotypeBuilder: ...
+    def phenotype_decoder(self) -> PhenotypeDecoder: ...
