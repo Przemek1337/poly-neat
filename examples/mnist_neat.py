@@ -167,7 +167,7 @@ def main() -> None:
 
     result = runner.run_evolution()
 
-    best_phenotype = algorithm.phenotype_builder.build_phenotype_from_genome(
+    best_phenotype = algorithm.phenotype_decoder.build_phenotype_from_genome(
         result.best_genome_ever_found
     )
     train_accuracy = ClassificationAccuracyEvaluator(
