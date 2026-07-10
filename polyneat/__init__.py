@@ -2,6 +2,9 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.algorithms.neat.initial_population import (
+    build_fully_connected_initial_population,
+)
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
 from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
@@ -118,6 +121,7 @@ __all__ = [
     "get_active_logging_config",
     # NEAT algorithm
     "NEATAlgorithm",
+    "build_fully_connected_initial_population",
     "NEATGenome",
     "NodeGene",
     "ConnectionGene",
