@@ -17,19 +17,20 @@ from numpy.random import Generator
 from polyneat.core.type_aliases import FitnessValue, SpeciesId
 
 if TYPE_CHECKING:
-    from polyneat.core.population import Population
+    from polyneat.config.algorithm_config import AlgorithmConfig
     from polyneat.core.generation_statistics import GenerationStatistics
+    from polyneat.core.population import Population
 
 
 @runtime_checkable
 class Genome(Protocol):
     """Immutable genotype. All operators return a new Genome instead of mutating in place."""
 
-    def clone_genome(self) -> "Genome": ...
+    def clone_genome(self) -> Genome: ...
     def to_serializable_dict(self) -> dict: ...
 
     @classmethod
-    def from_serializable_dict(cls, payload: dict) -> "Genome": ...
+    def from_serializable_dict(cls, payload: dict) -> Genome: ...
 
 
 @runtime_checkable
@@ -64,6 +65,29 @@ class PhenotypeDecoder(Protocol[GenomeType]):
     """Maps Genome -> Phenotype. Different decoders for different encodings."""
 
     def build_phenotype_from_genome(self, genome: GenomeType) -> Phenotype: ...
+
+
+# Contravariant because the config only appears in parameter position: a strategy
+# accepting a broader config type may stand in where a narrower one is expected.
+ConfigType = TypeVar("ConfigType", bound="AlgorithmConfig", contravariant=True)
+
+
+@runtime_checkable
+class InitialPopulationStrategy(Protocol[ConfigType]):
+    """Builds generation 0 of a population.
+
+    Selected by name from config via a per-algorithm strategy registry, or
+    assigned directly to the algorithm's ``initial_population_factory``. Plain
+    functions satisfy this protocol; a strategy needing state is a class with
+    ``__call__``.
+    """
+
+    def __call__(
+        self,
+        config: ConfigType,
+        innovation_tracker: InnovationTracker,
+        rng: Generator,
+    ) -> Population: ...
 
 
 @runtime_checkable
@@ -121,14 +145,14 @@ class FitnessEvaluator(Protocol):
 class NeuroevolutionAlgorithm(Protocol):
     """The algorithm - composes the protocols above."""
 
-    def create_initial_population(self, rng: Generator) -> "Population": ...
+    def create_initial_population(self, rng: Generator) -> Population: ...
 
     def advance_one_generation(
         self,
-        current_population: "Population",
+        current_population: Population,
         fitnesses_of_current_population: list[FitnessValue],
         rng: Generator,
-    ) -> tuple["Population", "GenerationStatistics"]: ...
+    ) -> tuple[Population, GenerationStatistics]: ...
 
     @property
     def phenotype_decoder(self) -> PhenotypeDecoder: ...

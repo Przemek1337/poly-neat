@@ -71,10 +71,19 @@ def test_algorithm_uses_custom_initial_population_factory(
     small_neat_config: NEATConfig, rng: np.random.Generator
 ) -> None:
     sentinel_population = Population(genomes=[], species_assignments=None, generation_number=0)
+    received_arguments = {}
 
     def sentinel_factory(config, innovation_tracker, factory_rng):
+        received_arguments["config"] = config
+        received_arguments["innovation_tracker"] = innovation_tracker
+        received_arguments["rng"] = factory_rng
         return sentinel_population
 
     algorithm = NEATAlgorithm.from_config(small_neat_config)
     algorithm.initial_population_factory = sentinel_factory
     assert algorithm.create_initial_population(rng) is sentinel_population
+    # The factory contract: it receives the algorithm's own config and
+    # innovation tracker plus the caller's RNG.
+    assert received_arguments["config"] is algorithm.config
+    assert received_arguments["innovation_tracker"] is algorithm.innovation_tracker
+    assert received_arguments["rng"] is rng

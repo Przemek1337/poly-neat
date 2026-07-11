@@ -8,6 +8,11 @@ from polyneat.config.configuration_errors import ConfigurationError
 
 @dataclass
 class NEATConfig(AlgorithmConfig):
+    # Initial population. Name resolved against the strategy registry in
+    # polyneat.algorithms.neat.initial_population at NEATAlgorithm.from_config
+    # time (not here, to keep config free of algorithm imports).
+    initial_population_strategy: str = "fully_connected"
+
     # Mutation rates
     probability_of_add_node_mutation: float = 0.03
     probability_of_add_connection_mutation: float = 0.05
