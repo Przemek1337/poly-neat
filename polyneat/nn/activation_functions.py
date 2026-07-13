@@ -39,6 +39,26 @@ def identity_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
     return pre_activation_tensor
 
 
+def gaussian_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
+    """Unnormalized Gaussian ``exp(-x^2)`` used as a CPPN function (HyperNEAT).
+
+    Symmetric and peaked at the origin, which lets a CPPN express bilateral
+    symmetry in a connectivity pattern by applying it to a single coordinate
+    (Stanley et al. 2009, Section 3.2).
+    """
+    return torch.exp(-(pre_activation_tensor**2))
+
+
+def sine_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
+    """Sine used as a CPPN function; its periodicity expresses repetition."""
+    return torch.sin(pre_activation_tensor)
+
+
+def absolute_value_activation(pre_activation_tensor: torch.Tensor) -> torch.Tensor:
+    """Absolute value used as a CPPN function (part of the paper's set)."""
+    return torch.abs(pre_activation_tensor)
+
+
 ACTIVATION_FUNCTION_NAME_TO_CALLABLE: dict[str, ActivationFunction] = {
     "sigmoid": sigmoid_activation,
     "steepened_sigmoid": steepened_sigmoid_activation,
@@ -46,6 +66,9 @@ ACTIVATION_FUNCTION_NAME_TO_CALLABLE: dict[str, ActivationFunction] = {
     "relu": relu_activation,
     "leaky_relu": leaky_relu_activation,
     "identity": identity_activation,
+    "gaussian": gaussian_activation,
+    "sine": sine_activation,
+    "absolute_value": absolute_value_activation,
 }
 
 

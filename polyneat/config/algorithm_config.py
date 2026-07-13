@@ -44,14 +44,23 @@ class AlgorithmConfig:
     @classmethod
     def from_dict(cls, raw_config_data: dict[str, Any]) -> "AlgorithmConfig":
         """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos)."""
-        known_field_names = {field.name for field in fields(cls)}
+        dataclass_fields = fields(cls)
+        known_field_names = {field.name for field in dataclass_fields}
         unknown_keys = set(raw_config_data.keys()) - known_field_names
         if unknown_keys:
             raise ConfigurationError(
                 f"Unknown configuration keys: {sorted(unknown_keys)}. "
                 f"Check for typos. Known keys: {sorted(known_field_names)}"
             )
-        return cls(**raw_config_data)
+        coerced_config_data = dict(raw_config_data)
+        for dataclass_field in dataclass_fields:
+            if isinstance(dataclass_field.default, tuple) and isinstance(
+                coerced_config_data.get(dataclass_field.name), list
+            ):
+                coerced_config_data[dataclass_field.name] = tuple(
+                    coerced_config_data[dataclass_field.name]
+                )
+        return cls(**coerced_config_data)
 
     def save_to_yaml_file(self, yaml_file_path: Path) -> None:
         yaml_file_path.write_text(
@@ -59,4 +68,7 @@ class AlgorithmConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            key: (list(value) if isinstance(value, tuple) else value)
+            for key, value in asdict(self).items()
+        }
