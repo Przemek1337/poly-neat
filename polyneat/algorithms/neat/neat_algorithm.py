@@ -14,8 +14,9 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.initial_population import (
-    InitialPopulationCallable,
+    NEATInitialPopulationStrategy,
     build_fully_connected_initial_population,
+    resolve_initial_population_strategy_by_name,
 )
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
@@ -74,7 +75,7 @@ class NEATAlgorithm:
     speciator: Speciator[NEATGenome]
     innovation_tracker: GlobalInnovationTracker
     _phenotype_decoder: PhenotypeDecoder[NEATGenome]
-    initial_population_factory: InitialPopulationCallable | None = None
+    initial_population_factory: NEATInitialPopulationStrategy | None = None
     _species_stagnation_bookkeeping: dict[SpeciesId, _SpeciesReproductionState] = field(
         default_factory=dict
     )
@@ -88,7 +89,7 @@ class NEATAlgorithm:
         cls,
         config: NEATConfig,
         device_for_phenotype_computation: torch.device | None = None,
-    ) -> "NEATAlgorithm":
+    ) -> NEATAlgorithm:
         resolved_device = device_for_phenotype_computation or torch.device(
             config.device_for_phenotype_evaluation
         )
@@ -138,6 +139,9 @@ class NEATAlgorithm:
         phenotype_decoder = NEATPhenotypeDecoder(
             device_for_computation=resolved_device,
         )
+        initial_population_factory = resolve_initial_population_strategy_by_name(
+            config.initial_population_strategy
+        )
 
         return cls(
             config=config,
@@ -147,6 +151,7 @@ class NEATAlgorithm:
             speciator=speciator,
             innovation_tracker=innovation_tracker,
             _phenotype_decoder=phenotype_decoder,
+            initial_population_factory=initial_population_factory,
         )
 
     def create_initial_population(self, rng: Generator) -> Population:

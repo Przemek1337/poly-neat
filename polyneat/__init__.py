@@ -3,7 +3,10 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
 from polyneat.algorithms.neat.initial_population import (
+    build_fs_neat_initial_population,
     build_fully_connected_initial_population,
+    register_initial_population_strategy,
+    resolve_initial_population_strategy_by_name,
 )
 from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
@@ -32,6 +35,7 @@ from polyneat.core.component_protocols import (
     CrossoverOperator,
     FitnessEvaluator,
     Genome,
+    InitialPopulationStrategy,
     InnovationTracker,
     MutationOperator,
     NeuroevolutionAlgorithm,
@@ -86,6 +90,7 @@ __all__ = [
     "ParentSelection",
     "Speciator",
     "FitnessEvaluator",
+    "InitialPopulationStrategy",
     "InnovationTracker",
     "NeuroevolutionAlgorithm",
     # Data types
@@ -122,6 +127,9 @@ __all__ = [
     # NEAT algorithm
     "NEATAlgorithm",
     "build_fully_connected_initial_population",
+    "build_fs_neat_initial_population",
+    "register_initial_population_strategy",
+    "resolve_initial_population_strategy_by_name",
     "NEATGenome",
     "NodeGene",
     "ConnectionGene",

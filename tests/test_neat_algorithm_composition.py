@@ -9,6 +9,9 @@ from polyneat.algorithms.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
 )
 from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.algorithms.neat.initial_population import (
+    build_fully_connected_initial_population,
+)
 from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
 from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
 from polyneat.algorithms.neat.neat_crossover import NEATCrossover
@@ -58,7 +61,10 @@ def test_from_config_defaults_build_standard_components(
     assert isinstance(algorithm.speciator, CompatibilityDistanceSpeciator)
     assert isinstance(algorithm.innovation_tracker, GlobalInnovationTracker)
     assert isinstance(algorithm.phenotype_decoder, NEATPhenotypeDecoder)
-    assert algorithm.initial_population_factory is None
+    assert (
+        algorithm.initial_population_factory
+        is build_fully_connected_initial_population
+    )
 
 
 def test_replace_swaps_selected_components_and_keeps_the_rest(
