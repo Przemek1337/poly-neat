@@ -1,19 +1,19 @@
 # PolyNEAT
 
-Biblioteka Pythonowa do **algorytmów neuroewolucji**. Pierwszy zaimplementowany algorytm to klasyczny NEAT (Stanley & Miikkulainen, 2002). Architektura jest zaprojektowana tak, by bez przebudowy rdzenia można było dodawać warianty NEAT (HyperNEAT, ES-HyperNEAT, NEAT-LSTM) oraz metody głębokiej neuroewolucji.
+A Python library for **neuroevolution algorithms**. The first implemented algorithm is classic NEAT (Stanley & Miikkulainen, 2002). The architecture is designed so that NEAT variants (HyperNEAT, ES-HyperNEAT, NEAT-LSTM) and deep-neuroevolution methods can be added without rebuilding the core.
 
 ---
 
-## Instalacja
+## Installation
 
-Wymaga Pythona 3.11+. Zalecany menedżer pakietów to [`uv`](https://github.com/astral-sh/uv).
+Requires Python 3.11+. The recommended package manager is [`uv`](https://github.com/astral-sh/uv).
 
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[dev]"
 ```
 
-Alternatywnie ze standardowym `pip`:
+Alternatively with standard `pip`:
 
 ```bash
 python -m venv .venv
@@ -24,319 +24,380 @@ pip install -e ".[dev]"
 
 ---
 
-## Szybki start — benchmark XOR
+## Quick start - the examples
 
 ```bash
-uv run python examples/xor_baseline.py
+uv run python examples/xor_baseline.py          # NEAT on XOR
+uv run python examples/xor_fsneat.py            # FS-NEAT: XOR + noise distractor inputs
+uv run python examples/mnist_neat.py            # NEAT on down-pooled MNIST
 ```
 
-Artefakty (topologie sieci, najlepszy genom w JSON i pickle) trafiają do `examples/xor_artifacts/`.
+Artifacts (network topologies, best genome as JSON and pickle) are written to `examples/<name>_artifacts/`.
 
 ---
 
-## Struktura projektu
+## Monitoring with TensorBoard
+
+Every example attaches a `TensorBoardLogger` callback and writes event files to
+`examples/<name>_artifacts/tensorboard/<run_id>/`. To watch a run (live or after
+the fact):
+
+```bash
+uv run tensorboard --logdir examples/xor_artifacts/tensorboard
+# or point at all example runs at once:
+uv run tensorboard --logdir examples
+```
+
+Logged scalars: `fitness/best`, `fitness/mean`, `fitness/median`,
+`population/num_species`, and any algorithm-specific metrics under `extra/*`
+(e.g. `extra/innovation_id_high_water_mark`). To log your own runs, add the
+callback to the runner:
+
+```python
+pn.TensorBoardLogger(log_directory=Path("runs/tensorboard"), run_name="my-run")
+```
+
+---
+
+## Choosing the evaluation device (`--cpu` / `--gpu`)
+
+All example scripts accept two mutually exclusive flags:
+
+- `--cpu` - force phenotype evaluation on the CPU,
+- `--gpu` - force CUDA; if CUDA is not available the script prints a clear
+  error and exits with code 1 (there is deliberately **no** silent GPU→CPU
+  fallback, so benchmark numbers are never quietly produced on the wrong
+  device),
+- no flag - the `device_for_phenotype_evaluation` value from the example's
+  YAML config is used.
+
+In library code the same mechanism is
+`Algorithm.from_config(config, device_for_phenotype_computation=device)`.
+
+---
+
+## Project structure
+
+The core of the library **is NEAT**: the full implementation lives in
+`polyneat/core/neat/`, and derived algorithms subclass `NEATAlgorithm`,
+overriding only what they change (FS-NEAT overrides just the initial
+population).
 
 ```
 poly-neat/
-├── polyneat/                  główny pakiet biblioteki
-│   ├── __init__.py            publiczne API — wszystko co eksportujemy
-│   ├── config/                konfiguracja eksperymentów
-│   ├── core/                  protokoły i typy danych
+├── polyneat/                  main library package
+│   ├── __init__.py            public API - everything we export
+│   ├── config/                experiment configuration
+│   ├── core/                  protocols, data types, and the NEAT core
+│   │   └── neat/              full NEAT implementation + mutations
 │   ├── algorithms/
-│   │   └── neat/              implementacja NEAT + mutacje
-│   ├── nn/                    funkcje aktywacji + narzędzia topologiczne
-│   ├── evaluators/            ocenianie fenotypów (sekwencyjne, równoległe, XOR)
-│   ├── runner/                pętla ewolucji, callbacki, kryteria stopu
-│   ├── logging_utils/         własny, kolorowany logger
-│   ├── viz/                   wizualizacja topologii sieci
-│   └── utils/                 pomocnicze (RNG, serializacja)
+│   │   ├── neat/              thin entry point (re-exports NEATAlgorithm from core)
+│   │   └── fsneat/            FS-NEAT: FSNEATAlgorithm(NEATAlgorithm)
+│   ├── nn/                    activation functions + topology utilities
+│   ├── evaluators/            phenotype evaluation (sequential, parallel, XOR, ...)
+│   ├── runner/                evolution loop, callbacks, termination criteria
+│   ├── logging_utils/         custom colored logger
+│   ├── viz/                   network topology rendering
+│   └── utils/                 helpers (RNG, serialization)
 ├── examples/
-│   ├── xor_baseline.py        skrypt demonstracyjny — NEAT na XOR
-│   └── xor_baseline.yaml      konfiguracja eksperymentu XOR
-└── docs/                      dokumenty projektowe
+│   ├── _example_cli.py        shared --cpu/--gpu CLI helper
+│   ├── xor_baseline.py/.yaml  NEAT on XOR
+│   ├── xor_fsneat.py/.yaml    FS-NEAT on XOR with noise distractor inputs
+│   └── mnist_neat.py/.yaml    NEAT on down-pooled MNIST
+└── docs/                      design documents
 ```
 
 ---
 
-## Za co odpowiada każdy moduł
+## What each module is responsible for
 
 ### `polyneat/config/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `algorithm_config.py` | Bazowy dataclass `AlgorithmConfig` — parametry wspólne dla każdego algorytmu (`population_size`, `number_of_input_nodes`, `random_seed` itp.). Zawiera `load_from_yaml_file` i `from_dict` (ścisłe — nieznane klucze rzucają `ConfigurationError`). |
-| `neat_config.py` | `NEATConfig` dziedziczy z `AlgorithmConfig` i dodaje wszystkie hiperparametry specyficzne dla NEAT: prawdopodobieństwa mutacji, współczynniki zgodności gatunkowej, parametry selekcji. |
-| `configuration_errors.py` | `ConfigurationError` — rzucany gdy konfiguracja jest nieprawidłowa; komunikat zawsze podaje pole, wartość i powód. |
+| `algorithm_config.py` | Base dataclass `AlgorithmConfig` - parameters shared by every algorithm (`population_size`, `number_of_input_nodes`, `random_seed`, etc.). Provides `load_from_yaml_file` and `from_dict` (strict - unknown keys raise `ConfigurationError`). |
+| `neat_config.py` | `NEATConfig` inherits from `AlgorithmConfig` and adds all NEAT-specific hyperparameters: mutation probabilities, compatibility-distance coefficients, selection parameters. |
+| `configuration_errors.py` | `ConfigurationError` - raised when a configuration is invalid; the message always names the field, the value, and the reason. |
 
 ### `polyneat/core/`
 
-Serce biblioteki. Definiuje **protokoły** (interfejsy w stylu Go/Rust) które każdy algorytm musi zaimplementować.
+The heart of the library. Defines the **protocols** (Go/Rust-style interfaces) every algorithm must implement.
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `component_protocols.py` | Dziesięć `@runtime_checkable Protocol`: `Genome`, `Phenotype`, `PhenotypeBuilder`, `MutationOperator`, `CrossoverOperator`, `ParentSelection`, `Speciator`, `FitnessEvaluator`, `NeuroevolutionAlgorithm`, `InnovationTracker`. Żaden z nich nie jest klasą bazową — wystarczy zaimplementować odpowiednie metody. |
-| `population.py` | Zamrożony dataclass `Population(genomes, species_assignments, generation_number)`. Niezmienny — każde pokolenie tworzy nowy obiekt. |
-| `generation_statistics.py` | Zamrożony dataclass `GenerationStatistics` — statystyki jednego pokolenia (najlepsza i średnia fitness, liczba gatunków, czas). |
-| `type_aliases.py` | Aliasy typów: `FitnessValue = float`, `InnovationId = int`, `SpeciesId = int`. Poprawiają czytelność sygnatur. |
+| `component_protocols.py` | Ten `@runtime_checkable Protocol`s: `Genome`, `Phenotype`, `PhenotypeDecoder`, `MutationOperator`, `CrossoverOperator`, `ParentSelection`, `Speciator`, `FitnessEvaluator`, `NeuroevolutionAlgorithm`, `InnovationTracker`. None of them is a base class - implementing the right methods is enough. |
+| `population.py` | Frozen dataclass `Population(genomes, species_assignments, generation_number)`. Immutable - every generation creates a new object. |
+| `generation_statistics.py` | Frozen dataclass `GenerationStatistics` - statistics of one generation (best and mean fitness, species count, timing). |
+| `type_aliases.py` | Type aliases: `FitnessValue = float`, `InnovationId = int`, `SpeciesId = int`. They make signatures easier to read. |
 
-### `polyneat/algorithms/neat/`
+### `polyneat/core/neat/`
 
-Implementacja klasycznego NEAT. Każdy aspekt algorytmu żyje we własnym pliku.
+The classic NEAT implementation - the core of the library. Every aspect of the algorithm lives in its own file. `polyneat/algorithms/neat/` remains a thin entry point (re-export of `NEATAlgorithm`), and `polyneat/algorithms/fsneat/` contains `FSNEATAlgorithm(NEATAlgorithm)` - FS-NEAT (Whiteson et al., 2005), which overrides only `create_initial_population`.
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `neat_genome.py` | Zamrożone dataclassy `NodeGene` i `ConnectionGene`, oraz `NEATGenome`. Genomu nie można modyfikować w miejscu — mutacja zawsze zwraca nowy obiekt. `__post_init__` waliduje brak duplikatów węzłów i innowacji. |
-| `global_innovation_tracker.py` | Przydziela globalne `InnovationId` dla nowych połączeń. W obrębie jednego pokolenia ta sama para `(źródło, cel)` dostaje ten sam ID (deduplikacja), dzięki czemu krzyżowanie może wyrównać geny o identycznej strukturze. Po każdym pokoleniu tabela deduplikacji jest czyszczona, ale licznik nigdy nie jest resetowany. |
-| `mutations/add_node_mutation.py` | Losuje jedno aktywne połączenie, wyłącza je, wstawia nowy węzeł ukryty, dodaje dwa nowe połączenia: wejście→węzeł (waga 1.0) i węzeł→wyjście (oryginalna waga). |
-| `mutations/add_connection_mutation.py` | Próbuje dodać nowe połączenie między nieodłączonymi węzłami. Sprawdza brak duplikatu, brak pętli własnej, brak cyklu (BFS od celu — jeżeli źródło jest osiągalne, cykl istnieje) i ograniczenia topologiczne (węzły wejściowe nie mogą być celem, węzły wyjściowe nie mogą być źródłem). |
-| `mutations/weight_modification_mutation.py` | Per-połączenie: z prawdopodobieństwem `p_perturb` dodaje szum Gaussowski, z prawdopodobieństwem `p_replace` losuje wagę od nowa z zakresu inicjalizacji. |
-| `mutations/toggle_connection_enabled_mutation.py` | Przełącza flagę `is_enabled` losowego połączenia. Przed ponownym włączeniem wyłączonego połączenia sprawdza, czy nie tworzy cyklu — kluczowy fix, bo `AddConnectionMutation` sprawdza cykle tylko na aktualnie aktywnych połączeniach. |
-| `mutations/composite_neat_mutation.py` | Stosuje mutacje po kolei: ModyfikacjaWag → DodajPołączenie → DodajWęzeł → Przełącz. Każda mutacja jest opcjonalna (własne prawdopodobieństwo). |
-| `neat_crossover.py` | Krzyżowanie wyrównane po `innovation_id`. Geny pasujące (oba rodzice mają ten sam ID) są losowo dziedziczone z prawdopodobieństwem zadanym w konfiguracji. Geny niepasujące (disjoint/excess) są brane od lepszego rodzica. Po złożeniu potomka `_resolve_enabled_connection_cycles` usuwa ewentualne cykle — mogą się pojawić gdy gene był wyłączony u jednego rodzica i ta 25% szansa na włączenie tworzy pętlę. |
-| `compatibility_distance_speciator.py` | Oblicza odległość zgodności δ = c₁·E/N + c₂·D/N + c₃·W̄ (nadmiarowe/rozłączne geny + różnica wag) i przydziela genomy do gatunków na podstawie porównania z reprezentantem gatunku. Po każdej specjacji reprezentant każdego gatunku jest **losowany na nowo** spośród aktualnych członków (representative resampling — zgodnie z oryginalną pracą; zamrożony reprezentant powodował sztuczną fragmentację gatunków). |
-| `tournament_parent_selection.py` | Turniej: losuje `tournament_size` osobników, zwraca najlepszego. Powtarza dla każdego żądanego rodzica. |
-| `torch_feedforward_phenotype.py` | Sieć neuronowa wykonana jako `nn.Module` PyTorcha. Przy tworzeniu oblicza topologiczny porządek węzłów (algorytm Kahna), potem `forward_pass` iteruje węzły w tej kolejności, sumuje ważone wejścia i stosuje funkcję aktywacji. Obsługuje wejścia wsadowe `[batch, n_inputs]`. |
-| `neat_phenotype_builder.py` | Buduje `TorchFeedForwardPhenotype` z `NEATGenome`. Przekazuje urządzenie (CPU/GPU). |
-| `neat_algorithm.py` | `NEATAlgorithm` — klasa główna. `from_config()` wytwarza wszystkie komponenty z `NEATConfig`. `create_initial_population()` tworzy minimalne genomy (wejścia + bias → wyjścia). `advance_one_generation()` wykonuje pełen cykl: specjacja → adjusted fitness → alokacja potomków (proporcjonalna do **sumy** adjusted fitness gatunku) → elityzm → survival threshold (tylko najlepsze 20% gatunku zostaje rodzicami) → reprodukcja (z rzadkim krzyżowaniem międzygatunkowym, p=0.001) → reset trackera innowacji. |
+| `neat_genome.py` | Frozen dataclasses `NodeGene` and `ConnectionGene`, plus `NEATGenome`. A genome cannot be modified in place - mutation always returns a new object. `__post_init__` validates that there are no duplicate nodes or innovations. |
+| `global_innovation_tracker.py` | Assigns global `InnovationId`s to new connections. Within one generation the same `(source, target)` pair gets the same id (deduplication), which lets crossover align structurally identical genes. After each generation the dedup table is cleared, but the counter is never reset. |
+| `initial_population.py` | Generation-0 strategies: `fully_connected` (vanilla NEAT minimal start) and `fs_neat` (single random input→output connection per genome), plus a name→strategy registry extensible via `register_initial_population_strategy`. |
+| `mutations/add_node_mutation.py` | Picks one enabled connection, disables it, inserts a new hidden node, adds two new connections: input→node (weight 1.0) and node→output (the original weight). |
+| `mutations/add_connection_mutation.py` | Tries to add a new connection between unconnected nodes. Checks for duplicates, self-loops, cycles (BFS from the target - if the source is reachable, a cycle exists) and topological constraints (input nodes cannot be targets, output nodes cannot be sources). |
+| `mutations/weight_modification_mutation.py` | Per connection: with probability `p_perturb` adds Gaussian noise, with probability `p_replace` redraws the weight from the initialization range. |
+| `mutations/toggle_connection_enabled_mutation.py` | Flips the `is_enabled` flag of a random connection. Before re-enabling a disabled connection it checks that no cycle is created - a key fix, because `AddConnectionMutation` checks cycles only on the currently enabled connections. |
+| `mutations/composite_neat_mutation.py` | Applies the mutations in order: WeightModification → AddConnection → AddNode → Toggle. Each mutation is optional (has its own probability). |
+| `neat_crossover.py` | Crossover aligned by `innovation_id`. Matching genes (both parents share the id) are inherited randomly with the configured probability. Non-matching genes (disjoint/excess) come from the fitter parent. After assembling the child, `_resolve_enabled_connection_cycles` removes any cycles - they can appear when a gene was disabled in one parent and the 25% re-enable chance closes a loop. |
+| `compatibility_distance_speciator.py` | Computes the compatibility distance δ = c₁·E/N + c₂·D/N + c₃·W̄ (excess/disjoint genes + weight difference) and assigns genomes to species by comparison with each species' representative. After every speciation pass the representative of each species is **resampled** from the current members (representative resampling - as in the original paper; a frozen representative caused artificial species fragmentation). |
+| `tournament_parent_selection.py` | Tournament: samples `tournament_size` individuals, returns the best. Repeats for every requested parent. |
+| `torch_feedforward_phenotype.py` | The neural network as a PyTorch `nn.Module`. At construction it computes a topological order of the nodes (Kahn's algorithm); `forward_pass` then iterates the nodes in that order, sums weighted inputs and applies the activation function. Supports batched inputs `[batch, n_inputs]`. |
+| `neat_phenotype_decoder.py` | Builds a `TorchFeedForwardPhenotype` from a `NEATGenome`. Passes the device (CPU/GPU) through. |
+| `neat_algorithm.py` | `NEATAlgorithm` - the main class. `from_config()` builds every component from `NEATConfig` via overridable `_build_*` factory methods (template method - subclasses replace only what they change). `create_initial_population()` builds minimal genomes (inputs + bias → outputs). `advance_one_generation()` runs the full cycle: speciation → adjusted fitness → offspring allocation (proportional to the **sum** of each species' adjusted fitness) → elitism → survival threshold (only the best 20% of a species become parents) → reproduction (with rare interspecies mating, p=0.001) → innovation tracker reset. |
+
+### `polyneat/algorithms/`
+
+| Package | Responsibility |
+|---|---|
+| `neat/` | Thin entry point: re-exports `NEATAlgorithm` from `polyneat/core/neat/`. |
+| `fsneat/` | `FSNEATAlgorithm(NEATAlgorithm)` - FS-NEAT (Whiteson et al., 2005). Overrides only `create_initial_population`; every genome starts with a single random input→output connection, so evolution itself selects the relevant input features. Any `initial_population_strategy` from YAML is deliberately ignored. |
 
 ### `polyneat/nn/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `activation_functions.py` | `sigmoid`, `tanh`, `relu`, `leaky_relu`, `identity` jako callable'e PyTorcha. Słownik `ACTIVATION_FUNCTION_NAME_TO_CALLABLE` + `resolve_activation_function_by_name(name)` rzucający `ConfigurationError` przy nieznanej nazwie. |
-| `topology_utilities.py` | `compute_topological_order_of_node_ids` — algorytm Kahna, rzuca `ValueError` na cyklu. `would_directed_edge_create_cycle` — BFS od kandydującego celu; jeżeli źródło jest osiągalne, krawędź tworzy cykl. |
+| `activation_functions.py` | `sigmoid`, `steepened_sigmoid`, `tanh`, `relu`, `leaky_relu`, `identity` as PyTorch callables. Dictionary `ACTIVATION_FUNCTION_NAME_TO_CALLABLE` + `resolve_activation_function_by_name(name)` which raises `ConfigurationError` for unknown names. |
+| `topology_utilities.py` | `compute_topological_order_of_node_ids` - Kahn's algorithm, raises `ValueError` on a cycle. `would_directed_edge_create_cycle` - BFS from the candidate target; if the source is reachable, the edge would create a cycle. |
 
 ### `polyneat/evaluators/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `sequential_evaluator_base.py` | `SequentialFitnessEvaluator` — klasa bazowa dla oceniania jednego fenotypu na raz. Wystarczy nadpisać `evaluate_single_phenotype`. |
-| `parallel_evaluator_wrapper.py` | `ParallelFitnessEvaluatorWrapper` opakowuje dowolny evaluator i ocenia równolegle przez `joblib`. Domyślnie `prefer="threads"`. |
-| `xor_evaluator.py` | `XORFitnessEvaluator` — ocenia fenotyp na czterech wzorcach XOR. Fitness = Σ(1 − (oczekiwane − rzeczywiste)²), max = 4.0. Próg rozwiązanego XOR: ≥ 3.95. |
+| `sequential_evaluator_base.py` | `SequentialFitnessEvaluator` - base class for evaluating one phenotype at a time. Overriding `evaluate_single_phenotype` is enough. |
+| `parallel_evaluator_wrapper.py` | `ParallelFitnessEvaluatorWrapper` wraps any evaluator and evaluates in parallel via `joblib`. Defaults to `prefer="threads"`. |
+| `xor_evaluator.py` | `XORFitnessEvaluator` - evaluates a phenotype on the four XOR patterns. Fitness = Σ(1 − (expected − actual)²), max = 4.0. Solved-XOR threshold: ≥ 3.95. |
+| `classification_accuracy_evaluator.py` | `ClassificationAccuracyEvaluator` - fraction of samples whose argmax output matches the label. |
+| `softmax_likelihood_evaluator.py` | `SoftmaxLikelihoodFitnessEvaluator` - mean softmax probability of the correct class; a smooth training signal for many-class problems (used by the MNIST example). |
 
 ### `polyneat/runner/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `evolution_runner.py` | `EvolutionRunner` — główna pętla: buduje fenotypy → ocenia fitness → śledzi najlepszy genom → wywołuje `advance_one_generation` → sprawdza warunek stopu. Zwraca `EvolutionResult`. |
-| `run_context.py` | `RunContext` — bieżący stan biegu (ID, czas startu, numer pokolenia, historia statystyk, najlepszy dotychczas genom). Przekazywany do wszystkich callbacków. |
-| `termination_criteria.py` | `MaxGenerationsTermination`, `TargetFitnessTermination`, `FitnessStagnationTermination`, `CompositeTermination` (logika OR). |
-| `evolution_callback_protocol.py` | Protokół `EvolutionCallback` z sześcioma hakami: `on_run_started`, `on_generation_started`, `on_population_evaluated`, `on_generation_completed`, `on_new_best_genome_found`, `on_run_completed`. `BaseEvolutionCallback` dostarcza puste implementacje domyślne. |
-| `builtin_evolution_callbacks.py` | `ConsoleStatisticsLogger` (tabela rich), `TensorBoardLogger`, `BestGenomePersister` (JSON + pickle), `NetworkTopologyVisualizer`. |
+| `evolution_runner.py` | `EvolutionRunner` - the main loop: builds phenotypes → evaluates fitness → tracks the best genome → calls `advance_one_generation` → checks the termination criterion. Returns an `EvolutionResult`. |
+| `run_context.py` | `RunContext` - the current run state (id, start time, generation number, statistics history, best genome so far). Passed to all callbacks. |
+| `termination_criteria.py` | `MaxGenerationsTermination`, `TargetFitnessTermination`, `FitnessStagnationTermination`, `CompositeTermination` (OR logic). |
+| `evolution_callback_protocol.py` | The `EvolutionCallback` protocol with six hooks: `on_run_started`, `on_generation_started`, `on_population_evaluated`, `on_generation_completed`, `on_new_best_genome_found`, `on_run_completed`. `BaseEvolutionCallback` provides empty default implementations. |
+| `builtin_evolution_callbacks.py` | `ConsoleStatisticsLogger` (rich table), `TensorBoardLogger`, `BestGenomePersister` (JSON + pickle), `NetworkTopologyVisualizer`. |
 
 ### `polyneat/logging_utils/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `custom_logger.py` | Jedyna dozwolona ścieżka do loggera: `get_logger(__name__)`. Rejestruje `CustomLogger` jako klasę przez `logging.setLoggerClass` przy imporcie. Każdy logger sam podłącza swój handler — nie ma propagacji. |
-| `colored_level_formatter.py` | `ColoredLevelFormatter` — koloruje treść wiadomości (nie cały wiersz) kolorami `colorama`. DEBUG=niebieski, INFO=zielony, WARNING=żółty, ERROR=czerwony, CRITICAL=ciemnoczerwony. |
-| `logging_config.py` | `LoggingConfig` — poziom logowania, format wiadomości, opcjonalny katalog logów do pliku. |
+| `custom_logger.py` | The only allowed path to a logger: `get_logger(__name__)`. Registers `CustomLogger` as the logger class via `logging.setLoggerClass` at import time. Every logger attaches its own handler - there is no propagation. |
+| `colored_level_formatter.py` | `ColoredLevelFormatter` - colors the message body (not the whole line) with `colorama` colors. DEBUG=blue, INFO=green, WARNING=yellow, ERROR=red, CRITICAL=dark red. |
+| `logging_config.py` | `LoggingConfig` - log level, message format, optional directory for file logs. |
 
 ### `polyneat/viz/`
 
-`network_topology_renderer.py` — `render_genome_topology(genome, output_path)`. Używa `matplotlib` i `networkx`, `matplotlib.use("Agg")` zapewnia działanie bez wyświetlacza (serwer, CI). Węzły wejściowe/bias/ukryte/wyjściowe mają różne kolory; wyłączone połączenia są przerywane.
+`network_topology_renderer.py` - `render_genome_topology(genome, output_path)`. Uses `matplotlib` and `networkx`; `matplotlib.use("Agg")` guarantees it works without a display (server, CI). Input/bias/hidden/output nodes get different colors; disabled connections are dashed.
 
 ### `polyneat/utils/`
 
-| Plik | Odpowiedzialność |
+| File | Responsibility |
 |---|---|
-| `random_generator_factory.py` | `create_seeded_random_generator(seed)` — zwraca `numpy.random.Generator`. Jedna funkcja, jeden punkt kontroli ziarna. |
+| `random_generator_factory.py` | `create_seeded_random_generator(seed)` - returns a `numpy.random.Generator`. One function, one point of seed control. |
 | `artifact_serialization.py` | `save_as_json`, `load_from_json`, `save_as_pickle`, `load_from_pickle`. |
 
 ---
 
-## Jak działa NEAT — algorytm krok po kroku
+## How NEAT works - the algorithm step by step
 
-### Skąd pochodzi implementacja
+### Where the implementation comes from
 
-NEAT jest oparty na oryginalnej publikacji:
+NEAT is based on the original publication:
 
 > Stanley, K. O. & Miikkulainen, R. (2002). **Evolving Neural Networks through Augmenting Topologies**. *Evolutionary Computation*, 10(2), 99–127.
 
-Artykuł jest dostępny bezpłatnie na stronie autora. Każda decyzja implementacyjna w kodzie (formuła odległości zgodności, reguły krzyżowania, alokacja offspring) ma swoje źródło w tym dokumencie.
+The article is freely available on the author's website. Every implementation decision in the code (the compatibility distance formula, the crossover rules, offspring allocation) traces back to this document.
 
 ---
 
-### Problem, który NEAT rozwiązuje
+### The problem NEAT solves
 
-Klasyczna ewolucja sieci neuronowych ma trzy fundamentalne problemy:
+Classic neural network evolution has three fundamental problems:
 
-**1. Problem konkurujących konwencji**
-Jeśli ewolucja niezależnie odkrywa ten sam ukryty węzeł w dwóch genomach, strukturalnie są identyczne, ale węzły mają inne numery. Krzyżowanie takich genomów produkuje potomka z podwojonymi węzłami — bałagan.
+**1. The competing conventions problem**
+If evolution independently discovers the same hidden node in two genomes, they are structurally identical but the nodes carry different numbers. Crossing over such genomes produces offspring with duplicated nodes - a mess.
 
-*Rozwiązanie NEAT:* każda nowa krawędź strukturalna dostaje globalny `InnovationId`. Jeśli ta sama krawędź `(A→B)` pojawia się w kilku genomach w tym samym pokoleniu, wszyscy dostają ten sam ID. Krzyżowanie wyrównuje geny po `InnovationId`, a nie po indeksie.
+*NEAT's solution:* every new structural edge gets a global `InnovationId`. If the same edge `(A→B)` appears in several genomes within the same generation, they all get the same id. Crossover aligns genes by `InnovationId`, not by index.
 
-**2. Problem ochrony innowacji strukturalnych**
-Nowo dodany węzeł ukryty zaburza sieć — fitness spada. Bez ochrony gatunek z innowacją topologiczną zginie zanim zdąży ją zoptymalizować.
+**2. The problem of protecting structural innovation**
+A freshly added hidden node perturbs the network - fitness drops. Without protection, a lineage carrying a topological innovation dies before it can optimize it.
 
-*Rozwiązanie NEAT:* specjacja. Genomy podobne strukturalnie (mała odległość zgodności) tworzą jeden gatunek. Selekcja odbywa się wewnątrz gatunków, a fitness jest dzielona przez rozmiar gatunku (shared fitness). Każdy gatunek konkuruje sam ze sobą.
+*NEAT's solution:* speciation. Structurally similar genomes (small compatibility distance) form one species. Selection happens within species, and fitness is divided by the species size (shared fitness). Each species competes with itself.
 
-**3. Problem minimalnej wymiarowości**
-Sieci losowo inicjowane mają tyle samo wolności co duże sieci, ale są trudniejsze do ewolucji. Duże przestrzenie wag → wolna konwergencja.
+**3. The problem of minimal dimensionality**
+Randomly initialized networks have as much freedom as large ones but are harder to evolve. Large weight spaces mean slow convergence.
 
-*Rozwiązanie NEAT:* start od minimalnej sieci (wejścia + bias → wyjścia, bez węzłów ukrytych). Złożoność topologiczna rośnie stopniowo przez mutacje `AddNode` i `AddConnection`.
+*NEAT's solution:* start from a minimal network (inputs + bias → outputs, no hidden nodes). Topological complexity grows gradually through the `AddNode` and `AddConnection` mutations.
 
 ---
 
-### Kodowanie genomu
+### Genome encoding
 
 ```
 NodeGene:
-  node_id              : int       — unikalny identyfikator
-  node_type            : str       — "input" | "hidden" | "output" | "bias"
-  activation_function  : str       — "sigmoid" | "tanh" | "relu"
+  node_id              : int       - unique identifier
+  node_type            : str       - "input" | "hidden" | "output" | "bias"
+  activation_function  : str       - "sigmoid" | "tanh" | "relu"
 
 ConnectionGene:
-  innovation_id        : int       — globalny numer innowacji
+  innovation_id        : int       - global innovation number
   source_node_id       : int
   target_node_id       : int
   weight               : float
-  is_enabled           : bool      — AddNodeMutation wyłącza dzielone połączenie
+  is_enabled           : bool      - AddNodeMutation disables the split connection
 ```
 
-Zarówno `NodeGene`, `ConnectionGene` jak i `NEATGenome` to **zamrożone dataclassy** — żaden z operatorów nie modyfikuje istniejącego genomu. Mutacja zawsze zwraca nowy obiekt.
+`NodeGene`, `ConnectionGene` and `NEATGenome` are all **frozen dataclasses** - no operator modifies an existing genome. Mutation always returns a new object.
 
 ---
 
-### Cykl jednego pokolenia (`advance_one_generation`)
+### One generation cycle (`advance_one_generation`)
 
 ```
-Populacja t
+Population t
     │
     ▼
-[1] Specjacja
-    CompatibilityDistanceSpeciator porównuje każdy genom
-    z reprezentantem każdego gatunku.
+[1] Speciation
+    CompatibilityDistanceSpeciator compares every genome
+    with each species' representative.
     δ = c₁·E/N + c₂·D/N + c₃·W̄
-      E — geny nadmiarowe (excess)
-      D — geny rozłączne (disjoint)
-      W̄ — średnia różnica wag genów pasujących
-      N — normalizacja (rozmiar większego genomu)
-    Jeśli δ < threshold → ten sam gatunek.
-    Po przydziale reprezentant każdego gatunku jest losowany
-    na nowo spośród członków bieżącego pokolenia.
+      E - excess genes
+      D - disjoint genes
+      W̄ - mean weight difference of matching genes
+      N - normalization (size of the larger genome)
+    If δ < threshold → same species.
+    After assignment the representative of each species is
+    resampled from the members of the current generation.
     │
     ▼
 [2] Adjusted fitness
-    Dla każdego osobnika i w gatunku s (rozmiar |s|):
+    For each individual i in species s (size |s|):
     adjusted_fitness[i] = raw_fitness[i] / |s|
-    (fitness jest "dzielona" między gatunek)
+    (fitness is "shared" across the species)
     │
     ▼
-[3] Stagnacja
-    Jeśli gatunek nie poprawił najlepszego raw fitness
-    przez species_stagnation_generations_limit pokoleń → usuwany.
-    Gatunek zawierający globalnie najlepszy genom zawsze przeżywa.
+[3] Stagnation
+    If a species has not improved its best raw fitness
+    for species_stagnation_generations_limit generations → removed.
+    The species containing the globally best genome always survives.
     │
     ▼
-[4] Alokacja potomków
-    Każdy gatunek dostaje offspring_slots proporcjonalnie do
-    SUMY adjusted fitness swoich członków (= średnia raw fitness
-    gatunku — jak w oryginalnej pracy). Zaokrąglanie metodą
-    największych reszt, więc suma slotów = population_size.
+[4] Offspring allocation
+    Each species receives offspring_slots proportional to the
+    SUM of its members' adjusted fitness (= the species' mean raw
+    fitness - as in the original paper). Largest-remainder
+    rounding, so the slot total equals population_size.
     │
     ▼
-[5] Elityzm
-    Jeśli gatunek ma ≥ minimum_species_size_for_elitism członków,
-    top species_elitism_count genomów przechodzi bez zmian.
+[5] Elitism
+    If a species has ≥ minimum_species_size_for_elitism members,
+    its top species_elitism_count genomes pass through unchanged.
     │
     ▼
-[6] Reprodukcja
-    Survival threshold: rodzicami może być tylko najlepsze
-    species_survival_fraction_for_reproduction (20%) gatunku,
-    minimum 2 osobniki.
-    Dla każdego wolnego slotu:
-      - 75% szansy: krzyżowanie dwóch rodziców wybranych turniejem;
-        z prawdopodobieństwem probability_of_interspecies_mating
-        (0.001) drugi rodzic pochodzi z całej populacji
-        (krzyżowanie międzygatunkowe)
-      - 25% szansy: klonowanie jednego rodzica
-      Wynik → mutacje kompozytowe
+[6] Reproduction
+    Survival threshold: only the best
+    species_survival_fraction_for_reproduction (20%) of a species
+    can become parents, minimum 2 individuals.
+    For each open slot:
+      - 75% chance: crossover of two tournament-selected parents;
+        with probability probability_of_interspecies_mating
+        (0.001) the second parent comes from the whole population
+        (interspecies mating)
+      - 25% chance: cloning a single parent
+      Result → composite mutations
     │
     ▼
-[7] Reset trackera innowacji (tabela deduplikacji na nowe pokolenie)
+[7] Innovation tracker reset (fresh dedup table for the new generation)
     │
     ▼
-Populacja t+1
+Population t+1
 ```
 
 ---
 
-### Krzyżowanie
+### Crossover
 
-Krzyżowanie wyrównuje geny po `InnovationId`:
+Crossover aligns genes by `InnovationId`:
 
 ```
-Rodzic 1 (lepszy): [1][2][3][ ][5][6][ ][8]
-Rodzic 2 (gorszy): [1][2][ ][4][ ][6][7][ ]
+Parent 1 (fitter): [1][2][3][ ][5][6][ ][8]
+Parent 2 (worse):  [1][2][ ][4][ ][6][7][ ]
                     ↑  ↑        ↑
-                  pasujące   pasujące
-                  (oba)       (oba)
+                 matching    matching
+                  (both)      (both)
 
-Geny pasujące (1,2,6): losowana jest kopia od lepszego lub gorszego rodzica
-Geny rozłączne (3,5,8 tylko u lepszego): dziedziczone od lepszego
-Geny rozłączne (4,7 tylko u gorszego): odrzucane
+Matching genes (1,2,6): a copy is drawn from the fitter or the worse parent
+Disjoint genes (3,5,8 - only in the fitter): inherited from the fitter
+Disjoint genes (4,7 - only in the worse): discarded
 ```
 
-Jeśli gen był wyłączony u któregokolwiek rodzica, potomek ma 75% szansy odziedziczyć go jako wyłączony (ochrona przed chaosem topologicznym). Po złożeniu całego genomu potomka uruchamiany jest `_resolve_enabled_connection_cycles` — usuwa ewentualne cykle powstałe przez kombinację stanu włączenia.
+If a gene was disabled in either parent, the offspring has a 75% chance of inheriting it disabled (protection against topological chaos). After the whole child genome is assembled, `_resolve_enabled_connection_cycles` runs - it removes any cycles produced by the combination of enable states.
 
 ---
 
-## Benchmark XOR
+## The XOR benchmark
 
-### Dlaczego XOR
+### Why XOR
 
-XOR (wyłączna alternatywa) to **standardowy benchmark NEAT** z oryginalnej pracy. Jest użyteczny z kilku powodów:
+XOR (exclusive or) is **the standard NEAT benchmark** from the original paper. It is useful for several reasons:
 
-- Jest **nieseparowalny liniowo** — sieć bez węzłów ukrytych nie może go rozwiązać. Algorytm musi wyewoluować odpowiednią topologię.
-- Jest **trywialnie weryfikowalny** — 4 wzorce wejściowe, zero niejednoznaczności.
-- Stanley i Miikkulainen użyli XOR do walidacji NEAT w 2002 roku — daje punkt odniesienia.
+- It is **not linearly separable** - a network without hidden nodes cannot solve it. The algorithm must evolve the right topology.
+- It is **trivially verifiable** - 4 input patterns, zero ambiguity.
+- Stanley and Miikkulainen used XOR to validate NEAT in 2002 - it provides a reference point.
 
-| Wejście | Oczekiwane wyjście |
+| Input | Expected output |
 |---|---|
 | (0, 0) | 0 |
 | (0, 1) | 1 |
 | (1, 0) | 1 |
 | (1, 1) | 0 |
 
-### Funkcja fitness
+### Fitness function
 
 ```python
-fitness = sum(1.0 - (oczekiwane - rzeczywiste)²)   # dla każdego z 4 wzorców
+fitness = sum(1.0 - (expected - actual)²)   # over each of the 4 patterns
 ```
 
-**Maksimum = 4.0** (wszystkie wzorce bezbłędne).  
-**Próg rozwiązania: ≥ 3.95**.
+**Maximum = 4.0** (all patterns perfect).  
+**Solved threshold: ≥ 3.95**.
 
-Używamy **błędu kwadratowego** zamiast absolutnego, bo:
-- Błąd absolutny daje płaski gradient wokół lokalnego optimum "3 wzorce poprawne" (fitness = 3.0 niezależnie od tego jak bardzo sieć myli czwarty wzorzec)
-- Błąd kwadratowy penalizuje mocniej duże błędy i łagodniej małe → istnieje gradient zachęcający sieć do redukowania błędu na czwartym wzorcu
+We use **squared error** instead of absolute error because:
+- Absolute error gives a flat gradient around the "3 patterns correct" local optimum (fitness = 3.0 no matter how badly the network misses the fourth pattern)
+- Squared error penalizes large errors more and small errors less, so there is a gradient encouraging the network to reduce the error on the fourth pattern
 
-Innymi słowy: sieć która daje wynik 0.5 dla wzorca (1,1) (pół błędu) dostaje fitness 3.75, a nie 3.5 jak przy błędzie absolutnym. To tworzy wyraźny sygnał do dalszej nauki.
+In other words: a network that outputs 0.5 for pattern (1,1) (half an error) gets fitness 3.75, not 3.5 as with absolute error. That creates a clear signal for further learning.
 
 ---
 
-### Parametry konfiguracji i uzasadnienie
+### Configuration parameters and their rationale
 
-Plik konfiguracyjny: `examples/xor_baseline.yaml`
+Configuration file: `examples/xor_baseline.yaml`
 
-#### Parametry ogólne
+#### General parameters
 
 ```yaml
 population_size: 150
 ```
-Zgodnie z oryginalną pracą Stanley'a. 150 osobników daje wystarczającą różnorodność bez nadmiernego kosztu obliczeniowego.
+As in Stanley's original paper. 150 individuals provide enough diversity without excessive computational cost.
 
 ```yaml
 number_of_input_nodes: 2
 number_of_output_nodes: 1
 random_seed: 42
 ```
-XOR ma dwa wejścia (x₁, x₂) i jedno wyjście. Sieć inicjowana jest też z węzłem bias (automatycznie).
+XOR has two inputs (x₁, x₂) and one output. The network is also initialized with a bias node (automatically).
 
 ---
 
-#### Zakresy wag
+#### Weight ranges
 
 ```yaml
 initial_weight_range_min: -2.0
@@ -344,11 +405,11 @@ initial_weight_range_max: 2.0
 weight_perturbation_strength_sigma: 0.5
 ```
 
-Oryginalny artykuł używa zakresu [-1, 1] w połączeniu ze **stromym sigmoidem** (nachylenie 4.9), dzięki któremu wyjścia saturują się przy wagach zwykłej wielkości. Używamy tego samego stromego sigmoidu (patrz sekcja o funkcjach aktywacji), a nieco szerszy zakres [-2, 2] z perturbacją σ=0.5 daje ewolucji szybki dostęp do potrzebnych wartości wag.
+The original article uses the range [-1, 1] combined with a **steepened sigmoid** (slope 4.9), which lets outputs saturate at ordinary weight magnitudes. We use the same steepened sigmoid (see the activation functions section), and the slightly wider range [-2, 2] with perturbation σ=0.5 gives evolution quick access to the weight values it needs.
 
 ---
 
-#### Prawdopodobieństwa mutacji
+#### Mutation probabilities
 
 ```yaml
 probability_of_add_node_mutation: 0.03
@@ -358,15 +419,15 @@ probability_of_weight_replacement: 0.10
 probability_of_toggle_connection_enabled: 0.01
 ```
 
-- **AddNode = 3%** — topologia rośnie powoli. Za częste dodawanie węzłów prowadzi do wielkich, trudnych do optymalizacji sieci.
-- **AddConnection = 10%** — nieco wyższe niż w papierze (tam 5%), bo XOR wymaga konkretnych połączeń do węzłów ukrytych, które muszą zostać odkryte przez ewolucję.
-- **WeightPerturbation = 80%** — wagi są perturbowane w prawie każdym pokoleniu. Bez tego sieci nie uczą się nic między pokoleniami.
-- **WeightReplacement = 10%** — mała szansa na całkowity reset wagi pozwala uciec z lokalnych minimów.
-- **Toggle = 1%** — rzadkie, bo często prowadzi do zakłóceń topologicznych.
+- **AddNode = 3%** - topology grows slowly. Adding nodes too often produces large networks that are hard to optimize.
+- **AddConnection = 10%** - slightly higher than in the paper (5% there), because XOR requires specific connections to hidden nodes that evolution has to discover.
+- **WeightPerturbation = 80%** - weights are perturbed in almost every generation. Without this, networks learn nothing between generations.
+- **WeightReplacement = 10%** - a small chance of a complete weight reset allows escaping local minima.
+- **Toggle = 1%** - rare, because it often causes topological disruption.
 
 ---
 
-#### Specjacja
+#### Speciation
 
 ```yaml
 compatibility_distance_coefficient_excess_c1: 1.0
@@ -375,13 +436,13 @@ compatibility_distance_coefficient_weight_difference_c3: 0.4
 compatibility_distance_threshold: 3.0
 ```
 
-Wartości wprost z oryginalnej pracy dla XOR. Współczynniki c₁ = c₂ = 1.0 oznaczają równe wagi dla genów nadmiarowych i rozłącznych. c₃ = 0.4 lekko obniża znaczenie różnicy wag (bo te mogą się naturalnie różnić między genami tej samej struktury).
+Values straight from the original paper for XOR. Coefficients c₁ = c₂ = 1.0 mean equal weight for excess and disjoint genes. c₃ = 0.4 slightly lowers the importance of weight differences (they can naturally differ between genes of the same structure).
 
-Próg δ < 3.0 tworzy nowy gatunek. Zbyt niski próg → eksplozja liczby gatunków (każdy osobnik osobno). Zbyt wysoki → brak ochrony dla innowacji. 3.0 to wartość z publikacji, sprawdzona na wielu konfiguracjach.
+A distance δ ≥ 3.0 founds a new species. Too low a threshold → explosion of the species count (every individual on its own). Too high → no protection for innovation. 3.0 is the published value, proven across many configurations.
 
 ---
 
-#### Zarządzanie gatunkami
+#### Species management
 
 ```yaml
 species_elitism_count: 1
@@ -389,13 +450,13 @@ species_stagnation_generations_limit: 15
 minimum_species_size_for_elitism: 5
 ```
 
-- **Elityzm = 1** — najlepszy osobnik każdego gatunku (≥5 członków) przechodzi bez zmian. Zapobiega utracie odkrytych dobrych rozwiązań.
-- **Stagnacja = 15** — gatunek bez poprawy najlepszego raw fitness przez 15 pokoleń jest usuwany. Ważne: stagnacja śledzi **raw fitness** (absolutną wartość), a nie adjusted fitness. Gdyby śledzić adjusted fitness, rosnący gatunek wyglądałby jakby się pogarszał (adjusted = raw / rozmiar maleje gdy rośnie mianownik) — to bug, który uniemożliwiał rozwiązanie XOR.
-- **MinRozmiarElityzmu = 5** — gatunki z 1–4 osobnikami nie mają elityzmu (i tak nie ma sensu "chronić" jednego osobnika który jest jedynym przedstawicielem).
+- **Elitism = 1** - the best individual of each species (≥5 members) passes through unchanged. Prevents losing good discovered solutions.
+- **Stagnation = 15** - a species with no improvement of its best raw fitness for 15 generations is removed. Important: stagnation tracks **raw fitness** (the absolute value), not adjusted fitness. Tracking adjusted fitness would make a growing species look like it was deteriorating (adjusted = raw / size shrinks as the denominator grows) - a bug that made XOR unsolvable.
+- **MinSizeForElitism = 5** - species with 1–4 individuals get no elitism (there is no point "protecting" a single individual that is its species' only representative).
 
 ---
 
-#### Reprodukcja i selekcja
+#### Reproduction and selection
 
 ```yaml
 probability_of_crossover_vs_mutation_only: 0.75
@@ -405,36 +466,36 @@ tournament_size_for_parent_selection: 3
 species_survival_fraction_for_reproduction: 0.2
 ```
 
-- **Krzyżowanie = 75%** — większość potomków pochodzi z krzyżowania. Reszta to klony + mutacja (pozwala eksplorować bez drugiego rodzica, ważne dla małych gatunków).
-- **Dziedziczenie od lepszego rodzica = 50%** — dla genów pasujących (oba rodzice mają ten sam innovation_id) równa szansa. To zgodne z papierem; inne implementacje używają 100% od lepszego, ale 50% zachowuje więcej różnorodności.
-- **Krzyżowanie międzygatunkowe = 0.001** — wartość wprost z oryginalnej pracy. Rzadkie mieszanie materiału genetycznego między gatunkami; drugi rodzic wybierany jest turniejem z całej populacji.
-- **Rozmiar turnieju = 3** — balans między presją selekcyjną (za mały turniej → wolna konwergencja) a różnorodnością (za duży → przedwczesna konwergencja).
-- **Survival threshold = 0.2** — przed reprodukcją gatunek jest przycinany do najlepszych 20% członków (min. 2); tylko oni mogą być rodzicami. Zgodne z oryginalną implementacją Stanleya (`survival_thresh`). To najważniejszy pojedynczy parametr dla tempa konwergencji — bez niego słabe osobniki wciąż trafiały do puli rodziców i XOR wymagał ~3× więcej pokoleń.
+- **Crossover = 75%** - most offspring come from crossover. The rest are clones + mutation (exploration without a second parent, important for small species).
+- **Inheritance from the fitter parent = 50%** - for matching genes (both parents share the innovation_id), equal chance. This follows the paper; other implementations use 100% from the fitter parent, but 50% preserves more diversity.
+- **Interspecies mating = 0.001** - value straight from the original paper. Rare mixing of genetic material between species; the second parent is tournament-selected from the whole population.
+- **Tournament size = 3** - a balance between selection pressure (too small a tournament → slow convergence) and diversity (too large → premature convergence).
+- **Survival threshold = 0.2** - before reproduction a species is truncated to its best 20% of members (min. 2); only they can become parents. Matches Stanley's reference implementation (`survival_thresh`). This is the single most important parameter for convergence speed - without it, weak individuals kept entering the parent pool and XOR needed ~3× more generations.
 
 ---
 
-#### Funkcje aktywacji
+#### Activation functions
 
 ```yaml
 default_activation_function_for_hidden_nodes: steepened_sigmoid
 default_activation_function_for_output_nodes: steepened_sigmoid
 ```
 
-`steepened_sigmoid` to φ(x) = 1/(1 + e^(−4.9x)) — **dokładnie ta funkcja, której używa oryginalna praca (sekcja 4.1)**. Nachylenie 4.9 pozwala sieci osiągać wyjścia bliskie 0/1 przy wagach zwykłej wielkości. Standardowy sigmoid (nachylenie 1) wymaga wag |w| ≥ 3–5 do saturacji, przez co ewolucja potrzebuje ~2× więcej pokoleń na XOR (zmierzone: śr. 60 vs 33 pokoleń na 10 ziarnach).
+`steepened_sigmoid` is φ(x) = 1/(1 + e^(−4.9x)) - **exactly the function used by the original paper (section 4.1)**. The 4.9 slope lets the network reach outputs close to 0/1 at ordinary weight magnitudes. A standard sigmoid (slope 1) requires weights |w| ≥ 3–5 to saturate, which makes evolution need ~2× more generations on XOR (measured: avg. 60 vs 33 generations over 10 seeds).
 
-Wyjście w zakresie (0, 1) jest wygodne dla binarnych problemów jak XOR. Nowe węzły ukryte też dostają tę funkcję, choć ewolucja może wybrać inną gdy `available_activation_functions` zawiera więcej opcji.
+An output in (0, 1) is convenient for binary problems like XOR. New hidden nodes also receive this function, though evolution may pick a different one when `available_activation_functions` contains more options.
 
 ---
 
-### Kryterium sukcesu — uwaga o porównywalności z oryginalną pracą
+### Success criterion - a note on comparability with the original paper
 
-Oryginalna praca uznaje sieć za rozwiązanie XOR, gdy **wszystkie cztery wyjścia są po właściwej stronie 0.5** (poprawna klasyfikacja). Nasz próg `fitness ≥ 3.95` z błędem kwadratowym jest **dużo ostrzejszy**: wymaga, by każde wyjście było średnio w odległości ~0.11 od celu. Sieć, którą praca uznałaby za rozwiązanie (np. wyjścia 0.3/0.7/0.7/0.3), ma u nas fitness zaledwie 3.64. Dlatego liczby pokoleń mierzone tymi dwoma kryteriami nie są porównywalne — raportujemy oba (pomocnik: `XORFitnessEvaluator.classifies_all_patterns_correctly`).
+The original paper counts a network as solving XOR when **all four outputs land on the correct side of 0.5** (correct classification). Our `fitness ≥ 3.95` threshold with squared error is **much stricter**: it requires each output to be on average within ~0.11 of its target. A network the paper would count as a solution (e.g. outputs 0.3/0.7/0.7/0.3) has fitness of only 3.64 with us. Generation counts measured against the two criteria are therefore not comparable - we report both (helper: `XORFitnessEvaluator.classifies_all_patterns_correctly`).
 
-### Wyniki benchmarku
+### Benchmark results
 
-Przy powyższej konfiguracji NEAT rozwiązuje XOR niezawodnie:
+With the configuration above, NEAT solves XOR reliably:
 
-| Ziarno (`seed`) | Najlepsza fitness | Pokoleń do fitness ≥ 3.95 | Pokoleń do kryterium z pracy |
+| Seed | Best fitness | Generations to fitness ≥ 3.95 | Generations to the paper's criterion |
 |---:|---:|---:|---:|
 | 0 | 3.9831 | 31 | 17 |
 | 1 | 3.9779 | 23 | 17 |
@@ -447,28 +508,28 @@ Przy powyższej konfiguracji NEAT rozwiązuje XOR niezawodnie:
 | 300 | 3.9790 | 26 | 26 |
 | 400 | 3.9756 | 60 | 57 |
 
-**10/10 ziaren; średnio 33.1 pokoleń do fitness ≥ 3.95 i 24.9 pokoleń do kryterium z oryginalnej pracy (praca raportuje średnio 32).**
+**10/10 seeds; on average 33.1 generations to fitness ≥ 3.95 and 24.9 generations to the paper's criterion (the paper reports an average of 32).**
 
-Poprzednia wersja implementacji potrzebowała średnio ~165 pokoleń do fitness ≥ 3.95. Przyspieszenie pochodzi z (ablacja na tych samych 10 ziarnach):
+A previous version of the implementation needed ~165 generations on average to reach fitness ≥ 3.95. The speedup comes from (ablation on the same 10 seeds):
 
-1. **Survival threshold + krzyżowanie międzygatunkowe + resampling reprezentantów + poprawiona alokacja potomków** — ~165 → 60.1 pokoleń. Dominujący wkład ma survival threshold (presja selekcyjna); sama poprawka resamplingu i alokacji nie zmienia tempa na XOR, ale usuwa fragmentację gatunków istotną w dłuższych biegach.
-2. **Stromy sigmoid (4.9) zamiast standardowego** — 60.1 → 33.1 pokoleń.
+1. **Survival threshold + interspecies mating + representative resampling + corrected offspring allocation** - ~165 → 60.1 generations. The dominant contribution is the survival threshold (selection pressure); the resampling and allocation fixes alone do not change the pace on XOR, but they remove the species fragmentation that matters in longer runs.
+2. **Steepened sigmoid (4.9) instead of the standard one** - 60.1 → 33.1 generations.
 
 ---
 
-## Używanie biblioteki
+## Using the library
 
-### Logger — jedyna dozwolona ścieżka
+### Logger - the only allowed path
 
 ```python
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
-logger.info("Wiadomość")
-logger.debug("Debug z %s", "argumentem")
+logger.info("Message")
+logger.debug("Debug with %s", "an argument")
 ```
 
-Nigdy `logging.getLogger` bezpośrednio. Konfiguracja raz na starcie:
+Never `logging.getLogger` directly. Configure once at startup:
 
 ```python
 import logging
@@ -476,25 +537,25 @@ from polyneat import LoggingConfig, set_logging_config
 
 set_logging_config(LoggingConfig(
     log_level=logging.DEBUG,
-    file_log_directory="runs/logs",  # None = bez logów do pliku
+    file_log_directory="runs/logs",  # None = no file logs
 ))
 ```
 
-### Własna funkcja fitness
+### A custom fitness function
 
 ```python
 from polyneat.evaluators.sequential_evaluator_base import SequentialFitnessEvaluator
 from polyneat.core.component_protocols import Phenotype
 from polyneat.core.type_aliases import FitnessValue
 
-class MojaOcena(SequentialFitnessEvaluator):
+class MyEvaluator(SequentialFitnessEvaluator):
     def evaluate_single_phenotype(self, phenotype: Phenotype) -> FitnessValue:
         import torch
-        wyniki = phenotype.forward_pass(torch.tensor([[1.0, 0.0]]))
-        return float(wyniki[0, 0].item())
+        outputs = phenotype.forward_pass(torch.tensor([[1.0, 0.0]]))
+        return float(outputs[0, 0].item())
 ```
 
-### Pełny eksperyment
+### A full experiment
 
 ```python
 from pathlib import Path
@@ -521,8 +582,8 @@ runner = pn.EvolutionRunner(
 )
 
 result = runner.run_evolution()
-print(f"Najlepsza fitness: {result.best_fitness_ever_achieved:.4f}")
-print(f"Powód zakończenia: {result.termination_reason}")
+print(f"Best fitness: {result.best_fitness_ever_achieved:.4f}")
+print(f"Termination reason: {result.termination_reason}")
 ```
 
 TensorBoard:
@@ -538,12 +599,12 @@ tensorboard --logdir runs/
 ```bash
 uv pip install -e ".[dev]"
 ruff check polyneat        # linting
-ruff format polyneat       # formatowanie
+ruff format polyneat       # formatting
 ```
 
 ---
 
-## Literatura
+## Literature
 
 - Stanley, K. O. & Miikkulainen, R. (2002). **Evolving Neural Networks through Augmenting Topologies**. *Evolutionary Computation*, 10(2), 99–127.
-- Pełny dokument projektowy: [`docs/superpowers/specs/2026-06-30-poly-neat-library-design.md`](docs/superpowers/specs/2026-06-30-poly-neat-library-design.md)
+- Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R. & Kohl, N. (2005). **Automatic Feature Selection in Neuroevolution**. *GECCO 2005*.

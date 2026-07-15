@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
@@ -7,6 +7,8 @@ from polyneat.runner.run_context import RunContext
 
 @runtime_checkable
 class TerminationCriterion(Protocol):
+    """Decides after each generation whether the evolution loop should stop."""
+
     def should_terminate_evolution(self, context: RunContext) -> bool: ...
 
     @property
@@ -14,6 +16,8 @@ class TerminationCriterion(Protocol):
 
 
 class MaxGenerationsTermination:
+    """Stops after a fixed number of generations."""
+
     def __init__(self, max_generations: int):
         self._max_generations = max_generations
 
@@ -26,6 +30,8 @@ class MaxGenerationsTermination:
 
 
 class TargetFitnessTermination:
+    """Stops once the best fitness reaches ``target_fitness``."""
+
     def __init__(self, target_fitness: float):
         self._target_fitness = target_fitness
 
@@ -41,6 +47,8 @@ class TargetFitnessTermination:
 
 
 class FitnessStagnationTermination:
+    """Stops when best fitness has not improved for ``stagnation_generations``."""
+
     def __init__(self, stagnation_generations: int):
         self._stagnation_generations = stagnation_generations
 

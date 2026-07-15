@@ -1,14 +1,23 @@
+"""Generation-0 strategies: NEAT's minimal start and FS-NEAT's sparse start.
+
+The fully connected strategy implements the minimal initial structure of
+Stanley & Miikkulainen (2002), sections 2.4 and 3.4; the FS-NEAT strategy
+implements the single-random-connection start of Whiteson et al. (2005).
+A name-to-strategy registry makes strategies selectable from YAML and
+user-extensible without touching library code.
+"""
+
 from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.config.configuration_errors import ConfigurationError
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
     InitialPopulationStrategy,
     InnovationTracker,
 )
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.core.population import Population
 
 # Concrete strategy type for NEAT: see InitialPopulationStrategy in
@@ -52,9 +61,21 @@ def build_fully_connected_initial_population(
 ) -> Population:
     """Vanilla-NEAT generation 0: every input and the bias node connected to every output.
 
+    Implements the minimal initial structure of the paper (sections 2.4 and
+    3.4): networks start with zero hidden nodes so the search begins in the
+    lowest-dimensional weight space, and topology grows only when it helps.
+
     All genomes share one node template and one innovation-id numbering (the
     tracker deduplicates per source/target pair), differing only in their
     random connection weights drawn uniformly from the configured range.
+
+    Args:
+        config: Network sizing and weight-range hyperparameters.
+        innovation_tracker: Tracker issuing the shared innovation ids.
+        rng: Source of randomness for connection weights.
+
+    Returns:
+        Generation-0 population of ``config.population_size`` genomes.
     """
     input_node_id_range = range(config.number_of_input_nodes)
     bias_node_id = config.number_of_input_nodes
@@ -104,7 +125,7 @@ def build_fully_connected_initial_population(
         generation_number=0,
     )
 
-
+# TODO: Move this to separate file. Population factory handling should be further discussed.
 def build_fs_neat_initial_population(
     config: NEATConfig,
     innovation_tracker: InnovationTracker,
@@ -117,6 +138,19 @@ def build_fs_neat_initial_population(
     which input features get connected at all - automatic feature selection.
     The bias node is present but starts unconnected: wiring it in is left to
     ``AddConnectionMutation``, the same as for any input deemed relevant.
+
+    Args:
+        config: Network sizing and weight-range hyperparameters.
+        innovation_tracker: Tracker issuing the shared innovation ids.
+        rng: Source of randomness for connection endpoints and weights.
+
+    Returns:
+        Generation-0 population of single-connection genomes.
+
+    References:
+        Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R., &
+        Kohl, N. (2005). Automatic Feature Selection in Neuroevolution.
+        *GECCO 2005*.
     """
     template_node_genes = _build_node_gene_template(config)
 
@@ -124,9 +158,7 @@ def build_fs_neat_initial_population(
     for _individual_index in range(config.population_size):
         source_node_id = int(rng.integers(0, config.number_of_input_nodes))
         target_node_id = int(
-            config.number_of_input_nodes
-            + 1
-            + rng.integers(0, config.number_of_output_nodes)
+            config.number_of_input_nodes + 1 + rng.integers(0, config.number_of_output_nodes)
         )
         innovation_id = innovation_tracker.get_or_assign_innovation_id_for_connection(
             source_node_id=source_node_id,
@@ -161,9 +193,6 @@ def build_fs_neat_initial_population(
     )
 
 
-# Name -> strategy registry, mirroring ACTIVATION_FUNCTION_NAME_TO_CALLABLE in
-# polyneat.nn: built-in strategies are selectable from YAML by name, and users
-# can register their own without touching library code.
 INITIAL_POPULATION_STRATEGY_NAME_TO_CALLABLE: dict[str, NEATInitialPopulationStrategy] = {
     "fully_connected": build_fully_connected_initial_population,
     "fs_neat": build_fs_neat_initial_population,
@@ -173,6 +202,17 @@ INITIAL_POPULATION_STRATEGY_NAME_TO_CALLABLE: dict[str, NEATInitialPopulationStr
 def resolve_initial_population_strategy_by_name(
     strategy_name: str,
 ) -> NEATInitialPopulationStrategy:
+    """Look up a strategy registered under ``strategy_name``.
+
+    Args:
+        strategy_name: Registry key, e.g. ``"fully_connected"`` or ``"fs_neat"``.
+
+    Returns:
+        The registered strategy callable.
+
+    Raises:
+        ConfigurationError: If no strategy is registered under the name.
+    """
     try:
         return INITIAL_POPULATION_STRATEGY_NAME_TO_CALLABLE[strategy_name]
     except KeyError:
@@ -186,6 +226,16 @@ def resolve_initial_population_strategy_by_name(
 def register_initial_population_strategy(
     strategy_name: str, strategy: NEATInitialPopulationStrategy
 ) -> None:
+    """Register a user-defined generation-0 strategy under a new name.
+
+    Args:
+        strategy_name: Registry key to expose the strategy under (usable as
+            ``initial_population_strategy`` in YAML configs).
+        strategy: Callable satisfying ``InitialPopulationStrategy``.
+
+    Raises:
+        ConfigurationError: If the name is already registered.
+    """
     if strategy_name in INITIAL_POPULATION_STRATEGY_NAME_TO_CALLABLE:
         raise ConfigurationError(
             f"Initial population strategy {strategy_name!r} is already registered. "

@@ -1,8 +1,16 @@
+"""NEAT crossover: gene alignment by innovation number.
+
+Implements the mating scheme of Stanley & Miikkulainen (2002), section 3.2
+and Figure 4: matching genes are inherited randomly, disjoint and excess
+genes come from the fitter parent, and a gene disabled in either parent has a
+preset chance of staying disabled in the child.
+"""
+
 from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
 
 
@@ -15,7 +23,9 @@ def _resolve_enabled_connection_cycles(
     is accepted only if it does not form a cycle with the already-accepted enabled
     edges. Disabled-in-input connections are passed through unchanged.
     """
-    sorted_indices = sorted(range(len(connection_genes)), key=lambda i: connection_genes[i].innovation_id)
+    sorted_indices = sorted(
+        range(len(connection_genes)), key=lambda i: connection_genes[i].innovation_id
+    )
     accepted_enabled_edges: list[tuple[int, int]] = []
     resolved: list[ConnectionGene] = list(connection_genes)
 
@@ -42,7 +52,7 @@ def _resolve_enabled_connection_cycles(
 
 
 class NEATCrossover:
-    """Stanley's NEAT crossover aligned by ``innovation_id``.
+    """Stanley's NEAT crossover aligned by ``innovation_id`` (paper, section 3.2).
 
     Matching genes (same innovation_id in both parents) are inherited from
     either parent, with ``probability_of_inheriting_from_fitter_parent_for_matching_genes``
@@ -76,6 +86,19 @@ class NEATCrossover:
         less_fit_parent: NEATGenome,
         rng: Generator,
     ) -> NEATGenome:
+        """Mate two parents into one child genome.
+
+        Args:
+            fitter_parent: Parent with the higher fitness; disjoint and
+                excess genes are inherited from it.
+            less_fit_parent: The other parent; contributes only matching
+                genes (and, rarely, nodes referenced by them).
+            rng: Source of randomness for gene choice and enable flips.
+
+        Returns:
+            The child genome, with any accidental directed cycles resolved
+            by disabling the offending connections.
+        """
         fitter_parent_connections_by_innovation_id: dict[int, ConnectionGene] = {
             connection_gene.innovation_id: connection_gene
             for connection_gene in fitter_parent.connection_genes
@@ -86,11 +109,12 @@ class NEATCrossover:
         }
 
         child_connection_genes: list[ConnectionGene] = []
-        for innovation_id, fitter_connection_gene in (
-            fitter_parent_connections_by_innovation_id.items()
-        ):
-            matched_less_fit_connection_gene = (
-                less_fit_parent_connections_by_innovation_id.get(innovation_id)
+        for (
+            innovation_id,
+            fitter_connection_gene,
+        ) in fitter_parent_connections_by_innovation_id.items():
+            matched_less_fit_connection_gene = less_fit_parent_connections_by_innovation_id.get(
+                innovation_id
             )
 
             if matched_less_fit_connection_gene is None:
@@ -99,18 +123,14 @@ class NEATCrossover:
                 continue
 
             inherit_from_fitter = (
-                rng.random()
-                < self._probability_of_inheriting_from_fitter_parent_for_matching_genes
+                rng.random() < self._probability_of_inheriting_from_fitter_parent_for_matching_genes
             )
             chosen_connection_gene = (
-                fitter_connection_gene
-                if inherit_from_fitter
-                else matched_less_fit_connection_gene
+                fitter_connection_gene if inherit_from_fitter else matched_less_fit_connection_gene
             )
 
-            either_parent_had_disabled_gene = (
-                (not fitter_connection_gene.is_enabled)
-                or (not matched_less_fit_connection_gene.is_enabled)
+            either_parent_had_disabled_gene = (not fitter_connection_gene.is_enabled) or (
+                not matched_less_fit_connection_gene.is_enabled
             )
             if either_parent_had_disabled_gene:
                 child_is_enabled = not (
@@ -150,15 +170,16 @@ class NEATCrossover:
         for required_node_id in node_ids_referenced_by_child_connections:
             if required_node_id in node_ids_already_added:
                 continue
-            fallback_node_gene = (
-                fitter_parent_node_gene_by_id.get(required_node_id)
-                or less_fit_parent_node_gene_by_id.get(required_node_id)
-            )
+            fallback_node_gene = fitter_parent_node_gene_by_id.get(
+                required_node_id
+            ) or less_fit_parent_node_gene_by_id.get(required_node_id)
             if fallback_node_gene is not None:
                 child_node_genes.append(fallback_node_gene)
                 node_ids_already_added.add(required_node_id)
 
-        validated_child_connection_genes = _resolve_enabled_connection_cycles(child_connection_genes)
+        validated_child_connection_genes = _resolve_enabled_connection_cycles(
+            child_connection_genes
+        )
 
         return NEATGenome(
             node_genes=tuple(child_node_genes),

@@ -52,9 +52,7 @@ class CustomLogger(logging.Logger):
         log_directory_path = Path(cast(str, active_config.file_log_directory))
         log_directory_path.mkdir(parents=True, exist_ok=True)
         log_file_path = log_directory_path / f"polyneat_{uuid.uuid4()}.log"
-        file_handler = logging.FileHandler(
-            filename=str(log_file_path), mode="a", encoding="utf-8"
-        )
+        file_handler = logging.FileHandler(filename=str(log_file_path), mode="a", encoding="utf-8")
         file_handler.setFormatter(ColoredLevelFormatter(active_config.log_format))
         self.addHandler(file_handler)
 

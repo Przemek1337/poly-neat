@@ -1,47 +1,11 @@
-from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
-    AddNodeWithRandomActivationMutation,
-)
-from polyneat.algorithms.hyperneat.factory import make_hyperneat_algorithm
-from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
-    HyperNEATPhenotypeDecoder,
-)
-from polyneat.algorithms.hyperneat.substrate import (
-    Substrate,
-    SubstrateLayer,
-    SubstrateNode,
-    build_grid_sandwich_substrate,
-    build_layered_substrate,
-)
-from polyneat.algorithms.neat.compatibility_distance_speciator import (
-    CompatibilityDistanceSpeciator,
-)
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
-from polyneat.algorithms.neat.initial_population import (
-    build_fs_neat_initial_population,
-    build_fully_connected_initial_population,
-    register_initial_population_strategy,
-    resolve_initial_population_strategy_by_name,
-)
-from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
-from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
-from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
-from polyneat.algorithms.neat.mutations.toggle_connection_enabled_mutation import (
-    ToggleConnectionEnabledMutation,
-)
-from polyneat.algorithms.neat.mutations.weight_modification_mutation import (
-    WeightModificationMutation,
-)
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
-from polyneat.algorithms.neat.neat_crossover import NEATCrossover
-from polyneat.algorithms.neat.neat_genome import (
-    ConnectionGene,
-    InvalidGenomeError,
-    NEATGenome,
-    NodeGene,
-)
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
-from polyneat.algorithms.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
-from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
+"""PolyNEAT — a neuroevolution library whose core is NEAT.
+
+The full NEAT implementation (Stanley & Miikkulainen, 2002) lives in
+``polyneat.core.neat``; derived algorithms such as FS-NEAT subclass
+``NEATAlgorithm`` and override only what they change. This module re-exports
+the public API.
+"""
+
 from polyneat.config.algorithm_config import AlgorithmConfig
 from polyneat.config.configuration_errors import ConfigurationError
 from polyneat.config.hyperneat_config import HyperNEATConfig
@@ -60,6 +24,50 @@ from polyneat.core.component_protocols import (
     Speciator,
 )
 from polyneat.core.generation_statistics import GenerationStatistics
+from polyneat.core.neat.compatibility_distance_speciator import (
+    CompatibilityDistanceSpeciator,
+)
+from polyneat.core.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.core.neat.initial_population import (
+    build_fs_neat_initial_population,
+    build_fully_connected_initial_population,
+    register_initial_population_strategy,
+    resolve_initial_population_strategy_by_name,
+)
+from polyneat.algorithms.hyperneat.substrate import (
+    Substrate,
+    SubstrateLayer,
+    SubstrateNode,
+    build_grid_sandwich_substrate,
+    build_layered_substrate,
+)
+from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
+    AddNodeWithRandomActivationMutation,
+)
+from polyneat.algorithms.hyperneat.factory import make_hyperneat_algorithm
+from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
+    HyperNEATPhenotypeDecoder,
+)
+from polyneat.core.neat.mutations.add_connection_mutation import AddConnectionMutation
+from polyneat.core.neat.mutations.add_node_mutation import AddNodeMutation
+from polyneat.core.neat.mutations.composite_neat_mutation import CompositeNEATMutation
+from polyneat.core.neat.mutations.toggle_connection_enabled_mutation import (
+    ToggleConnectionEnabledMutation,
+)
+from polyneat.core.neat.mutations.weight_modification_mutation import (
+    WeightModificationMutation,
+)
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
+from polyneat.core.neat.neat_crossover import NEATCrossover
+from polyneat.core.neat.neat_genome import (
+    ConnectionGene,
+    InvalidGenomeError,
+    NEATGenome,
+    NodeGene,
+)
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
+from polyneat.core.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.core.population import Population
 from polyneat.core.type_aliases import FitnessValue, InnovationId, SpeciesId
 from polyneat.evaluators.parallel_evaluator_wrapper import ParallelFitnessEvaluatorWrapper
@@ -81,6 +89,7 @@ from polyneat.runner.evolution_callback_protocol import (
     BaseEvolutionCallback,
     EvolutionCallback,
 )
+from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.runner.evolution_runner import EvolutionResult, EvolutionRunner
 from polyneat.runner.run_context import RunContext
 from polyneat.runner.termination_criteria import (
@@ -141,6 +150,7 @@ __all__ = [
     "get_active_logging_config",
     # NEAT algorithm
     "NEATAlgorithm",
+    "FSNEATAlgorithm",
     "build_fully_connected_initial_population",
     "build_fs_neat_initial_population",
     "register_initial_population_strategy",

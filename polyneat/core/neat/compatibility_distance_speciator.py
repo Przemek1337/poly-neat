@@ -1,10 +1,17 @@
+"""Speciation by compatibility distance (paper, section 3.3).
+
+Protects topological innovation by clustering structurally similar genomes
+into species, so new structures compete within their own niche instead of
+against the whole population.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import NEATGenome
+from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.core.type_aliases import SpeciesId
 from polyneat.logging_utils.custom_logger import get_logger
 
@@ -13,6 +20,15 @@ logger = get_logger(__name__)
 
 @dataclass
 class SpeciesRepresentative:
+    """A species and the genome that represents it during assignment.
+
+    Attributes:
+        species_id: Stable id of the species across generations.
+        representative_genome: Genome new candidates are compared against.
+        member_genome_count_in_current_generation: Members assigned this pass.
+        member_indices_in_current_generation: Population indices of those members.
+    """
+
     species_id: SpeciesId
     representative_genome: NEATGenome
     member_genome_count_in_current_generation: int = 0
@@ -22,7 +38,7 @@ class SpeciesRepresentative:
 class CompatibilityDistanceSpeciator:
     """Stanley's NEAT speciation using the compatibility distance formula.
 
-    Distance between two genomes:
+    Distance between two genomes (paper, section 3.3, eq. 1):
 
         δ = c1·E/N + c2·D/N + c3·W̄
 
@@ -64,6 +80,15 @@ class CompatibilityDistanceSpeciator:
     def assign_genomes_to_species(
         self, genomes: list[NEATGenome], rng: Generator
     ) -> list[SpeciesId]:
+        """Assign every genome to a species, creating new species as needed.
+
+        Args:
+            genomes: The population of the current generation, in order.
+            rng: Source of randomness for representative resampling.
+
+        Returns:
+            The species id per genome, aligned with ``genomes``.
+        """
         species_id_per_genome: list[SpeciesId] = [-1] * len(genomes)
         for representative in self._species_representatives_from_previous_generation:
             representative.member_genome_count_in_current_generation = 0
@@ -100,6 +125,12 @@ class CompatibilityDistanceSpeciator:
         genome: NEATGenome,
         genome_index_in_population: int,
     ) -> SpeciesId:
+        """Place the genome in the first compatible species, or found a new one.
+
+        Matches the paper's sequential placement: the genome joins the first
+        species whose representative is within the compatibility threshold,
+        so species never overlap.
+        """
         for representative in self._species_representatives_from_previous_generation:
             distance_to_representative = self.compute_compatibility_distance(
                 genome_a=genome,
@@ -135,6 +166,15 @@ class CompatibilityDistanceSpeciator:
         genome_a: NEATGenome,
         genome_b: NEATGenome,
     ) -> float:
+        """Compute δ = c1·E/N + c2·D/N + c3·W̄ between two genomes (eq. 1).
+
+        Args:
+            genome_a: First genome.
+            genome_b: Second genome.
+
+        Returns:
+            The compatibility distance; 0.0 for two empty genomes.
+        """
         connections_by_innovation_id_a = {
             connection_gene.innovation_id: connection_gene
             for connection_gene in genome_a.connection_genes
@@ -167,9 +207,7 @@ class CompatibilityDistanceSpeciator:
             gene_b = connections_by_innovation_id_b.get(innovation_id)
 
             if gene_a is not None and gene_b is not None:
-                matching_gene_absolute_weight_differences.append(
-                    abs(gene_a.weight - gene_b.weight)
-                )
+                matching_gene_absolute_weight_differences.append(abs(gene_a.weight - gene_b.weight))
             elif innovation_id > highest_shared_boundary_innovation_id:
                 excess_gene_count += 1
             else:

@@ -11,7 +11,16 @@ from polyneat.config.configuration_errors import ConfigurationError
 
 @dataclass
 class AlgorithmConfig:
-    """Configuration shared by every neuroevolution algorithm."""
+    """Configuration shared by every neuroevolution algorithm.
+
+    Attributes:
+        population_size: Number of genomes per generation.
+        number_of_input_nodes: Input nodes of every network (bias excluded).
+        number_of_output_nodes: Output nodes of every network.
+        random_seed: Seed for the run's RNG; ``None`` means non-deterministic.
+        device_for_phenotype_evaluation: Torch device name used for phenotype
+            evaluation unless overridden from the CLI/from_config.
+    """
 
     population_size: int = 150
     number_of_input_nodes: int = 2
@@ -23,10 +32,13 @@ class AlgorithmConfig:
         self.validate()
 
     def validate(self) -> None:
+        """Check the base fields; subclasses extend and call ``super().validate()``.
+
+        Raises:
+            ConfigurationError: Naming the field, the value, and the reason.
+        """
         if self.population_size < 1:
-            raise ConfigurationError(
-                f"population_size must be >= 1, got {self.population_size}"
-            )
+            raise ConfigurationError(f"population_size must be >= 1, got {self.population_size}")
         if self.number_of_input_nodes < 1:
             raise ConfigurationError(
                 f"number_of_input_nodes must be >= 1, got {self.number_of_input_nodes}"
@@ -37,12 +49,23 @@ class AlgorithmConfig:
             )
 
     @classmethod
-    def load_from_yaml_file(cls, yaml_file_path: Path) -> "AlgorithmConfig":
+    def load_from_yaml_file(cls, yaml_file_path: Path) -> AlgorithmConfig:
+        """Load and validate a config from a YAML file (strict keys).
+
+        Args:
+            yaml_file_path: Path of the YAML file to read.
+
+        Returns:
+            A validated config instance of ``cls``.
+
+        Raises:
+            ConfigurationError: On unknown keys or invalid values.
+        """
         yaml_payload = yaml.safe_load(yaml_file_path.read_text(encoding="utf-8"))
         return cls.from_dict(yaml_payload)
 
     @classmethod
-    def from_dict(cls, raw_config_data: dict[str, Any]) -> "AlgorithmConfig":
+    def from_dict(cls, raw_config_data: dict[str, Any]) -> AlgorithmConfig:
         """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos)."""
         dataclass_fields = fields(cls)
         known_field_names = {field.name for field in dataclass_fields}
@@ -63,6 +86,7 @@ class AlgorithmConfig:
         return cls(**coerced_config_data)
 
     def save_to_yaml_file(self, yaml_file_path: Path) -> None:
+        """Dump the config as YAML, loadable back via ``load_from_yaml_file``."""
         yaml_file_path.write_text(
             yaml.dump(self.to_dict(), default_flow_style=False), encoding="utf-8"
         )

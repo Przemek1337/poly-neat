@@ -25,9 +25,7 @@ def compute_topological_order_of_node_ids(
         node_id_set.add(target_node_id)
 
     ready_queue: deque[int] = deque(
-        node_id
-        for node_id in node_id_set
-        if incoming_edge_count_by_node_id[node_id] == 0
+        node_id for node_id in node_id_set if incoming_edge_count_by_node_id[node_id] == 0
     )
     topologically_sorted_node_ids: list[int] = []
 

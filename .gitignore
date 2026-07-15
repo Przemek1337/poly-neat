@@ -6,4 +6,5 @@ __pycache__/
 .pytest_cache/
 dist/
 *.pyc
-mnist_data/
+examples/mnist_data/
+examples/*/tensorboard/

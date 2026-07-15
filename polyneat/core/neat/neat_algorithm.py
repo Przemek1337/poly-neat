@@ -1,3 +1,11 @@
+"""Vanilla NEAT generational loop and its overridable component factories.
+
+Implements the full NEAT reproduction cycle from Stanley & Miikkulainen
+(2002): speciation (section 3.3), explicit fitness sharing (eq. 2), species
+stagnation (section 4.1), proportional offspring allocation, elitism,
+survival-threshold truncation, and crossover/mutation reproduction.
+"""
+
 from __future__ import annotations
 
 import math
@@ -9,28 +17,6 @@ from typing import cast
 import torch
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.compatibility_distance_speciator import (
-    CompatibilityDistanceSpeciator,
-)
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
-from polyneat.algorithms.neat.initial_population import (
-    NEATInitialPopulationStrategy,
-    build_fully_connected_initial_population,
-    resolve_initial_population_strategy_by_name,
-)
-from polyneat.algorithms.neat.mutations.add_connection_mutation import AddConnectionMutation
-from polyneat.algorithms.neat.mutations.add_node_mutation import AddNodeMutation
-from polyneat.algorithms.neat.mutations.composite_neat_mutation import CompositeNEATMutation
-from polyneat.algorithms.neat.mutations.toggle_connection_enabled_mutation import (
-    ToggleConnectionEnabledMutation,
-)
-from polyneat.algorithms.neat.mutations.weight_modification_mutation import (
-    WeightModificationMutation,
-)
-from polyneat.algorithms.neat.neat_crossover import NEATCrossover
-from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
-from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
@@ -41,6 +27,28 @@ from polyneat.core.component_protocols import (
     Speciator,
 )
 from polyneat.core.generation_statistics import GenerationStatistics
+from polyneat.core.neat.compatibility_distance_speciator import (
+    CompatibilityDistanceSpeciator,
+)
+from polyneat.core.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.core.neat.initial_population import (
+    NEATInitialPopulationStrategy,
+    build_fully_connected_initial_population,
+    resolve_initial_population_strategy_by_name,
+)
+from polyneat.core.neat.mutations.add_connection_mutation import AddConnectionMutation
+from polyneat.core.neat.mutations.add_node_mutation import AddNodeMutation
+from polyneat.core.neat.mutations.composite_neat_mutation import CompositeNEATMutation
+from polyneat.core.neat.mutations.toggle_connection_enabled_mutation import (
+    ToggleConnectionEnabledMutation,
+)
+from polyneat.core.neat.mutations.weight_modification_mutation import (
+    WeightModificationMutation,
+)
+from polyneat.core.neat.neat_crossover import NEATCrossover
+from polyneat.core.neat.neat_genome import NEATGenome
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.tournament_parent_selection import TournamentParentSelection
 from polyneat.core.population import Population
 from polyneat.core.type_aliases import FitnessValue, SpeciesId
 from polyneat.logging_utils.custom_logger import get_logger
@@ -66,7 +74,27 @@ class _SpeciesReproductionState:
 
 @dataclass
 class NEATAlgorithm:
-    """Vanilla NEAT (Stanley & Miikkulainen, 2002) as a composition of protocol-conforming components."""
+    """Vanilla NEAT (Stanley & Miikkulainen, 2002) built from protocol-conforming components.
+
+    This class is the base of PolyNEAT's algorithm hierarchy. Derived
+    algorithms (e.g. :class:`~polyneat.algorithms.fsneat.FSNEATAlgorithm`)
+    subclass it and override only the ``_build_*`` factory methods or
+    ``create_initial_population``; the generational loop in
+    ``advance_one_generation`` is shared and stays untouched.
+
+    Attributes:
+        config: Validated NEAT hyperparameters.
+        mutation: Mutation operator applied to every non-elite child.
+        crossover: Crossover operator aligning genes by innovation id
+            (section 3.2 of the paper).
+        parent_selection: Within-species parent selection operator.
+        speciator: Assigns genomes to species by compatibility distance
+            (section 3.3).
+        innovation_tracker: Issues innovation ids for structural mutations
+            (section 3.2, historical markings).
+        initial_population_factory: Strategy building generation 0; ``None``
+            falls back to the fully connected minimal start (section 3.4).
+    """
 
     config: NEATConfig
     mutation: MutationOperator[NEATGenome]
@@ -90,11 +118,42 @@ class NEATAlgorithm:
         config: NEATConfig,
         device_for_phenotype_computation: torch.device | None = None,
     ) -> NEATAlgorithm:
+        """Build the algorithm from a config via overridable ``_build_*`` factories.
+
+        Template method: every component is produced by a dedicated factory
+        method, so a derived algorithm overrides only the pieces it changes
+        while the generational loop and the remaining components stay shared.
+
+        Args:
+            config: Validated NEAT hyperparameters.
+            device_for_phenotype_computation: Device override for phenotype
+                evaluation. ``None`` falls back to
+                ``config.device_for_phenotype_evaluation``.
+
+        Returns:
+            A fully wired algorithm instance of ``cls``.
+        """
         resolved_device = device_for_phenotype_computation or torch.device(
             config.device_for_phenotype_evaluation
         )
 
-        composite_mutation = CompositeNEATMutation(
+        return cls(
+            config=config,
+            mutation=cls._build_mutation(config),
+            crossover=cls._build_crossover(config),
+            parent_selection=cls._build_parent_selection(config),
+            speciator=cls._build_speciator(config),
+            innovation_tracker=GlobalInnovationTracker(),
+            _phenotype_decoder=cls._build_phenotype_decoder(config, resolved_device),
+            initial_population_factory=resolve_initial_population_strategy_by_name(
+                config.initial_population_strategy
+            ),
+        )
+
+    @classmethod
+    def _build_mutation(cls, config: NEATConfig) -> MutationOperator[NEATGenome]:
+        """Compose the four canonical NEAT mutations in their fixed order."""
+        return CompositeNEATMutation(
             ordered_individual_mutations=[
                 WeightModificationMutation(
                     probability_of_perturbation=config.probability_of_weight_perturbation,
@@ -119,15 +178,27 @@ class NEATAlgorithm:
                 ),
             ]
         )
-        neat_crossover = NEATCrossover(
+
+    @classmethod
+    def _build_crossover(cls, config: NEATConfig) -> CrossoverOperator[NEATGenome]:
+        """Build the innovation-aligned NEAT crossover operator."""
+        return NEATCrossover(
             probability_of_inheriting_from_fitter_parent_for_matching_genes=(
                 config.probability_of_inheriting_from_fitter_parent_for_matching_genes
             ),
         )
-        tournament_selection = TournamentParentSelection(
+
+    @classmethod
+    def _build_parent_selection(cls, config: NEATConfig) -> ParentSelection[NEATGenome]:
+        """Build the within-species parent selection operator."""
+        return TournamentParentSelection(
             tournament_size=config.tournament_size_for_parent_selection
         )
-        speciator = CompatibilityDistanceSpeciator(
+
+    @classmethod
+    def _build_speciator(cls, config: NEATConfig) -> Speciator[NEATGenome]:
+        """Build the compatibility-distance speciator."""
+        return CompatibilityDistanceSpeciator(
             coefficient_excess_c1=config.compatibility_distance_coefficient_excess_c1,
             coefficient_disjoint_c2=config.compatibility_distance_coefficient_disjoint_c2,
             coefficient_weight_difference_c3=(
@@ -135,26 +206,29 @@ class NEATAlgorithm:
             ),
             compatibility_threshold=config.compatibility_distance_threshold,
         )
-        innovation_tracker = GlobalInnovationTracker()
-        phenotype_decoder = NEATPhenotypeDecoder(
-            device_for_computation=resolved_device,
-        )
-        initial_population_factory = resolve_initial_population_strategy_by_name(
-            config.initial_population_strategy
-        )
 
-        return cls(
-            config=config,
-            mutation=composite_mutation,
-            crossover=neat_crossover,
-            parent_selection=tournament_selection,
-            speciator=speciator,
-            innovation_tracker=innovation_tracker,
-            _phenotype_decoder=phenotype_decoder,
-            initial_population_factory=initial_population_factory,
+    @classmethod
+    def _build_phenotype_decoder(
+        cls, config: NEATConfig, device: torch.device
+    ) -> PhenotypeDecoder[NEATGenome]:
+        """Build the genome-to-phenotype decoder bound to ``device``."""
+        return NEATPhenotypeDecoder(
+            device_for_computation=device,
         )
 
     def create_initial_population(self, rng: Generator) -> Population:
+        """Build generation 0, delegating to the configured strategy.
+
+        Defaults to the fully connected minimal topology of section 3.4 of
+        the paper (all inputs and the bias wired to all outputs, no hidden
+        nodes) when no strategy is configured.
+
+        Args:
+            rng: Source of randomness for initial connection weights.
+
+        Returns:
+            Generation-0 population of ``config.population_size`` genomes.
+        """
         if self.initial_population_factory is not None:
             return self.initial_population_factory(self.config, self.innovation_tracker, rng)
         return build_fully_connected_initial_population(
@@ -169,11 +243,28 @@ class NEATAlgorithm:
         fitnesses_of_current_population: list[FitnessValue],
         rng: Generator,
     ) -> tuple[Population, GenerationStatistics]:
+        """Run one full NEAT reproduction cycle and return the next generation.
+
+        Pipeline (in paper order): speciation → adjusted fitness (explicit
+        fitness sharing, eq. 2) → species stagnation (section 4.1) →
+        offspring-slot allocation proportional to each species' summed
+        adjusted fitness (section 3.3) → per-species elitism → survival
+        threshold truncation → reproduction (crossover + mutation, with rare
+        interspecies mating) → innovation-tracker reset.
+
+        Args:
+            current_population: The population to reproduce from.
+            fitnesses_of_current_population: Raw fitness per genome, aligned
+                with ``current_population.genomes``.
+            rng: Source of randomness for the whole cycle.
+
+        Returns:
+            A tuple of the next-generation population (same size) and the
+            statistics of the generation that was just evaluated.
+        """
         generation_start_wall_time = time.perf_counter()
 
-        neat_genomes_in_current_population = cast(
-            "list[NEATGenome]", current_population.genomes
-        )
+        neat_genomes_in_current_population = cast("list[NEATGenome]", current_population.genomes)
 
         species_id_per_genome_index = self.speciator.assign_genomes_to_species(
             neat_genomes_in_current_population,
@@ -218,7 +309,7 @@ class NEATAlgorithm:
                 member_genomes_in_species=member_genomes_in_species,
                 member_fitnesses_in_species=member_fitnesses_in_species,
             )
-            
+
             offspring_genomes.extend(elite_genomes_from_species)
             offspring_species_ids.extend(
                 [species_state.species_id] * len(elite_genomes_from_species)
@@ -249,11 +340,11 @@ class NEATAlgorithm:
         overall_best_genome_index = fitnesses_of_current_population.index(
             max(fitnesses_of_current_population)
         )
-        
+
         overall_best_genome_in_current_population = neat_genomes_in_current_population[
             overall_best_genome_index
         ]
-        
+
         overall_best_genome_species_id = species_id_per_genome_index[overall_best_genome_index]
         while len(offspring_genomes) < self.config.population_size:
             offspring_genomes.append(overall_best_genome_in_current_population)
@@ -291,6 +382,12 @@ class NEATAlgorithm:
         member_indices_by_species_id: dict[SpeciesId, list[int]],
         fitnesses_of_current_population: list[FitnessValue],
     ) -> list[_SpeciesReproductionState]:
+        """Compute per-species adjusted fitnesses (explicit fitness sharing).
+
+        Follows eq. 2 of the paper: with species already clustered by the
+        compatibility threshold, the sharing denominator reduces to the
+        species size, so ``adjusted = raw / |species|``.
+        """
         per_species_reproduction_states: list[_SpeciesReproductionState] = []
         for species_id, member_indices_in_species in member_indices_by_species_id.items():
             raw_fitnesses_in_species = [
@@ -318,10 +415,18 @@ class NEATAlgorithm:
         self,
         per_species_reproduction_states: list[_SpeciesReproductionState],
     ) -> None:
+        """Track how long each species has gone without improving its best raw fitness.
+
+        Stagnation deliberately tracks *raw* fitness: adjusted fitness shrinks
+        as a species grows, so tracking it would make healthy growing species
+        look stagnant.
+        """
         current_generation_species_ids: set[SpeciesId] = set()
         for species_state in per_species_reproduction_states:
             current_generation_species_ids.add(species_state.species_id)
-            existing_bookkeeping = self._species_stagnation_bookkeeping.get(species_state.species_id)
+            existing_bookkeeping = self._species_stagnation_bookkeeping.get(
+                species_state.species_id
+            )
             if existing_bookkeeping is None:
                 self._species_stagnation_bookkeeping[species_state.species_id] = species_state
                 species_state.best_raw_fitness_ever = species_state.best_raw_fitness
@@ -332,9 +437,7 @@ class NEATAlgorithm:
                 species_state.best_raw_fitness_ever = species_state.best_raw_fitness
                 species_state.generations_since_last_improvement = 0
             else:
-                species_state.best_raw_fitness_ever = (
-                    existing_bookkeeping.best_raw_fitness_ever
-                )
+                species_state.best_raw_fitness_ever = existing_bookkeeping.best_raw_fitness_ever
                 species_state.generations_since_last_improvement = (
                     existing_bookkeeping.generations_since_last_improvement + 1
                 )
@@ -349,6 +452,11 @@ class NEATAlgorithm:
         per_species_reproduction_states: list[_SpeciesReproductionState],
         fitnesses_of_current_population: list[FitnessValue],
     ) -> list[_SpeciesReproductionState]:
+        """Remove species stagnated past the configured limit (paper, section 4.1).
+
+        The species containing the population's best genome always survives,
+        so the champion is never lost to stagnation removal.
+        """
         overall_best_genome_index = fitnesses_of_current_population.index(
             max(fitnesses_of_current_population)
         )
@@ -402,9 +510,7 @@ class NEATAlgorithm:
             return
 
         exact_proportional_shares = [
-            species_total
-            / sum_of_total_adjusted_fitnesses
-            * total_offspring_slots_available
+            species_total / sum_of_total_adjusted_fitnesses * total_offspring_slots_available
             for species_total in total_adjusted_fitness_per_species
         ]
         for species_state, exact_share in zip(
@@ -413,8 +519,7 @@ class NEATAlgorithm:
             species_state.offspring_slot_count = int(exact_share)
 
         remaining_slots_after_flooring = total_offspring_slots_available - sum(
-            species_state.offspring_slot_count
-            for species_state in non_stagnated_species_states
+            species_state.offspring_slot_count for species_state in non_stagnated_species_states
         )
         species_indices_by_descending_fractional_part = sorted(
             range(len(non_stagnated_species_states)),
@@ -433,6 +538,12 @@ class NEATAlgorithm:
         member_genomes_in_species: list[NEATGenome],
         member_fitnesses_in_species: list[FitnessValue],
     ) -> list[NEATGenome]:
+        """Return the genomes copied unchanged into the next generation.
+
+        The paper (section 4.1) carries over the champion of each species
+        with more than five members; both the count and the size threshold
+        are configurable here.
+        """
         if len(member_genomes_in_species) < self.config.minimum_species_size_for_elitism:
             return []
         member_indices_sorted_by_fitness_descending = sorted(
@@ -465,8 +576,7 @@ class NEATAlgorithm:
             max(
                 2,
                 math.ceil(
-                    self.config.species_survival_fraction_for_reproduction
-                    * species_member_count
+                    self.config.species_survival_fraction_for_reproduction * species_member_count
                 ),
             ),
         )
@@ -489,6 +599,7 @@ class NEATAlgorithm:
         candidate_fitnesses: list[FitnessValue],
         rng: Generator,
     ) -> tuple[NEATGenome, FitnessValue]:
+        """Select one parent and return it together with its fitness."""
         selected_parent_genome = self.parent_selection.select_parents(
             candidate_genomes=candidate_genomes,
             candidate_fitnesses=candidate_fitnesses,
@@ -508,9 +619,14 @@ class NEATAlgorithm:
         all_fitnesses_in_population: list[FitnessValue],
         rng: Generator,
     ) -> NEATGenome:
-        wants_crossover = (
-            rng.random() < self.config.probability_of_crossover_vs_mutation_only
-        )
+        """Produce one child by crossover-then-mutation or mutation only.
+
+        Matches the paper's reproduction mix (section 4.1): 25% of offspring
+        come from mutation without crossover, and interspecies mating occurs
+        at a small configured rate (0.001 in the paper), drawing the second
+        parent from the whole population.
+        """
+        wants_crossover = rng.random() < self.config.probability_of_crossover_vs_mutation_only
         is_interspecies_mating = (
             wants_crossover
             and len(all_genomes_in_population) >= 2
