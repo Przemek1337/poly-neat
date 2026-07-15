@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from joblib import Parallel, delayed
 
@@ -10,19 +10,24 @@ logger = get_logger(__name__)
 
 
 class ParallelFitnessEvaluatorWrapper:
-    """Wraps any FitnessEvaluator and evaluates chunks in parallel via joblib."""
+    """Wraps any FitnessEvaluator and evaluates phenotypes in parallel via joblib."""
 
     def __init__(
         self,
         wrapped_evaluator: FitnessEvaluator,
         number_of_parallel_workers: int = -1,
     ) -> None:
+        """Wrap ``wrapped_evaluator`` for thread-parallel batch evaluation.
+
+        Args:
+            wrapped_evaluator: Evaluator that scores individual phenotypes.
+            number_of_parallel_workers: joblib ``n_jobs``; ``-1`` uses all cores.
+        """
         self._wrapped_evaluator = wrapped_evaluator
         self._number_of_parallel_workers = number_of_parallel_workers
 
-    def evaluate_batch_of_phenotypes(
-        self, phenotypes: list[Phenotype]
-    ) -> list[FitnessValue]:
+    def evaluate_batch_of_phenotypes(self, phenotypes: list[Phenotype]) -> list[FitnessValue]:
+        """Evaluate all phenotypes in parallel threads, preserving order."""
         if not phenotypes:
             return []
 

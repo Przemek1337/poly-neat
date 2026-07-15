@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
-from polyneat.algorithms.neat.initial_population import (
+from polyneat.config.neat_config import NEATConfig
+from polyneat.core.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.core.neat.initial_population import (
     build_fully_connected_initial_population,
 )
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
-from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.config.neat_config import NEATConfig
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
+from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.core.population import Population
 
 
@@ -52,9 +52,7 @@ def test_factory_assigns_identical_innovation_ids_across_genomes(
     }
     for genome in population.genomes[1:]:
         assert isinstance(genome, NEATGenome)
-        genome_innovation_ids = {
-            connection.innovation_id for connection in genome.connection_genes
-        }
+        genome_innovation_ids = {connection.innovation_id for connection in genome.connection_genes}
         assert genome_innovation_ids == reference_innovation_ids
 
 

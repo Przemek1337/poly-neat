@@ -30,6 +30,20 @@ class TournamentParentSelection(Generic[GenomeType]):
         number_of_parents_to_select: int,
         rng: Generator,
     ) -> list[GenomeType]:
+        """Run one tournament per requested parent.
+
+        Args:
+            candidate_genomes: Pool to select from.
+            candidate_fitnesses: Fitness per candidate, aligned by index.
+            number_of_parents_to_select: How many parents to return.
+            rng: Source of randomness for tournament sampling.
+
+        Returns:
+            The selected parents (possibly with repeats).
+
+        Raises:
+            ValueError: If the pool is empty or the lists are misaligned.
+        """
         if len(candidate_genomes) != len(candidate_fitnesses):
             raise ValueError(
                 f"TournamentParentSelection: candidate_genomes has length "

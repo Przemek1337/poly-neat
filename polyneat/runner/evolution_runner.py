@@ -32,6 +32,17 @@ TerminationReason = Literal[
 
 @dataclass(frozen=True)
 class EvolutionResult:
+    """Everything a finished evolution run produced.
+
+    Attributes:
+        final_population: The population at termination.
+        best_genome_ever_found: Best genome across all generations.
+        best_fitness_ever_achieved: Its raw fitness.
+        full_generation_history: Per-generation statistics, in order.
+        total_runtime_seconds: Wall-clock duration of the run.
+        termination_reason: Which criterion ended the run.
+    """
+
     final_population: Population
     best_genome_ever_found: Genome
     best_fitness_ever_achieved: FitnessValue
@@ -55,6 +66,15 @@ class EvolutionRunner:
         callbacks: list[EvolutionCallback] | None = None,
         random_seed: int | None = None,
     ) -> None:
+        """Assemble a runner from the algorithm and its collaborators.
+
+        Args:
+            algorithm: Any ``NeuroevolutionAlgorithm`` implementation.
+            fitness_evaluator: Scores each generation's phenotypes.
+            termination_criterion: Decides when the loop stops.
+            callbacks: Observers notified at each lifecycle hook.
+            random_seed: Seed for the run's RNG; ``None`` = non-deterministic.
+        """
         self._algorithm = algorithm
         self._fitness_evaluator = fitness_evaluator
         self._termination_criterion = termination_criterion
@@ -62,6 +82,15 @@ class EvolutionRunner:
         self._random_seed = random_seed
 
     def run_evolution(self) -> EvolutionResult:
+        """Run the evolution loop until the termination criterion fires.
+
+        Per generation: decode phenotypes → evaluate fitnesses → track the
+        best genome → ``advance_one_generation`` → check termination, with
+        callbacks notified at every step.
+
+        Returns:
+            The aggregated result of the whole run.
+        """
         random_generator = create_seeded_random_generator(self._random_seed)
         run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         run_started_at = datetime.now()
@@ -100,9 +129,7 @@ class EvolutionRunner:
             )
 
             for callback in self._callbacks:
-                callback.on_population_evaluated(
-                    run_context, current_population, current_fitnesses
-                )
+                callback.on_population_evaluated(run_context, current_population, current_fitnesses)
 
             generation_best_fitness = max(current_fitnesses)
             generation_best_genome = current_population.genomes[
@@ -129,9 +156,7 @@ class EvolutionRunner:
             run_context.history_of_generation_statistics.append(generation_statistics)
 
             for callback in self._callbacks:
-                callback.on_generation_completed(
-                    run_context, new_population, generation_statistics
-                )
+                callback.on_generation_completed(run_context, new_population, generation_statistics)
 
             if self._termination_criterion.should_terminate_evolution(run_context):
                 termination_reason_label = cast(

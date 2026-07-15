@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome
 from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
 
@@ -12,6 +12,11 @@ logger = get_logger(__name__)
 
 class AddConnectionMutation:
     """Adds an enabled connection between two currently unconnected nodes.
+
+    One of the two structural mutations of Stanley & Miikkulainen (2002),
+    section 3.1 (Figure 3): a single new connection gene with a random weight
+    is added, connecting two previously unconnected nodes, and receives an
+    innovation id from the tracker.
 
     Constraints:
       * The source may not be an ``output``.
@@ -48,9 +53,7 @@ class AddConnectionMutation:
             return genome
 
         eligible_source_node_ids = [
-            node_gene.node_id
-            for node_gene in genome.node_genes
-            if node_gene.node_type != "output"
+            node_gene.node_id for node_gene in genome.node_genes if node_gene.node_type != "output"
         ]
         eligible_target_node_ids = [
             node_gene.node_id
@@ -82,7 +85,8 @@ class AddConnectionMutation:
 
             if candidate_source_node_id == candidate_target_node_id:
                 continue
-            if (candidate_source_node_id, candidate_target_node_id) in existing_connection_source_target_pairs:
+            candidate_pair = (candidate_source_node_id, candidate_target_node_id)
+            if candidate_pair in existing_connection_source_target_pairs:
                 continue
             if would_directed_edge_create_cycle(
                 candidate_source_node_id=candidate_source_node_id,

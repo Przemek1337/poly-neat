@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome
 
 
 class WeightModificationMutation:
@@ -17,7 +17,10 @@ class WeightModificationMutation:
       * otherwise the weight is left unchanged.
 
     The two probabilities are checked in that order per connection (they are
-    *not* independent), which matches Stanley's convention.
+    *not* independent), which matches Stanley's convention. Weight mutation
+    is the non-structural mutation of the paper (section 3.1): "connection
+    weights mutate as in any NE system, with each connection either perturbed
+    or not".
     """
 
     def __init__(

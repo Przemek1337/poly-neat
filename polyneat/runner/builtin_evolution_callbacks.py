@@ -30,9 +30,9 @@ class ConsoleStatisticsLogger(BaseEvolutionCallback):
 
     def on_generation_completed(
         self,
-        context: "RunContext",
-        new_population: "Population",
-        statistics: "GenerationStatistics",
+        context: RunContext,
+        new_population: Population,
+        statistics: GenerationStatistics,
     ) -> None:
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_row(
@@ -46,13 +46,11 @@ class ConsoleStatisticsLogger(BaseEvolutionCallback):
 
     def on_new_best_genome_found(
         self,
-        context: "RunContext",
+        context: RunContext,
         best_genome: Genome,
         best_fitness: FitnessValue,
     ) -> None:
-        self._rich_console.print(
-            f"  [bold green]NEW BEST fitness: {best_fitness:.6f}[/bold green]"
-        )
+        self._rich_console.print(f"  [bold green]NEW BEST fitness: {best_fitness:.6f}[/bold green]")
 
 
 class TensorBoardLogger(BaseEvolutionCallback):
@@ -63,15 +61,15 @@ class TensorBoardLogger(BaseEvolutionCallback):
         self._run_name = run_name
         self._writer: SummaryWriter | None = None
 
-    def on_run_started(self, context: "RunContext") -> None:
+    def on_run_started(self, context: RunContext) -> None:
         resolved_log_directory = self._log_directory / (self._run_name or context.run_id)
         self._writer = SummaryWriter(log_dir=str(resolved_log_directory))
 
     def on_generation_completed(
         self,
-        context: "RunContext",
-        new_population: "Population",
-        statistics: "GenerationStatistics",
+        context: RunContext,
+        new_population: Population,
+        statistics: GenerationStatistics,
     ) -> None:
         if self._writer is None:
             return
@@ -86,7 +84,7 @@ class TensorBoardLogger(BaseEvolutionCallback):
         for metric_name, metric_value in statistics.extra_metrics.items():
             self._writer.add_scalar(f"extra/{metric_name}", metric_value, current_step)
 
-    def on_run_completed(self, context: "RunContext", final_result: object) -> None:
+    def on_run_completed(self, context: RunContext, final_result: object) -> None:
         if self._writer is not None:
             self._writer.close()
 
@@ -104,19 +102,19 @@ class BestGenomePersister(BaseEvolutionCallback):
         self._save_every_new_best = save_every_new_best
         self._save_on_run_completed = save_on_run_completed
 
-    def on_run_started(self, context: "RunContext") -> None:
+    def on_run_started(self, context: RunContext) -> None:
         self._output_directory.mkdir(parents=True, exist_ok=True)
 
     def on_new_best_genome_found(
         self,
-        context: "RunContext",
+        context: RunContext,
         best_genome: Genome,
         best_fitness: FitnessValue,
     ) -> None:
         if self._save_every_new_best:
             self._persist_best_genome_to_disk(best_genome, label="best_genome")
 
-    def on_run_completed(self, context: "RunContext", final_result: object) -> None:
+    def on_run_completed(self, context: RunContext, final_result: object) -> None:
         if self._save_on_run_completed and context.current_best_genome is not None:
             self._persist_best_genome_to_disk(context.current_best_genome, label="best_genome")
 
@@ -141,15 +139,15 @@ class NetworkTopologyVisualizer(BaseEvolutionCallback):
         self._render_every_n_generations = render_every_n_generations
         self._render_on_run_completed = render_on_run_completed
 
-    def on_run_started(self, context: "RunContext") -> None:
+    def on_run_started(self, context: RunContext) -> None:
         topology_output_directory = self._output_directory / "topology"
         topology_output_directory.mkdir(parents=True, exist_ok=True)
 
     def on_generation_completed(
         self,
-        context: "RunContext",
-        new_population: "Population",
-        statistics: "GenerationStatistics",
+        context: RunContext,
+        new_population: Population,
+        statistics: GenerationStatistics,
     ) -> None:
         if (
             self._render_every_n_generations is not None
@@ -163,7 +161,7 @@ class NetworkTopologyVisualizer(BaseEvolutionCallback):
                 / f"gen_{statistics.generation_number:04d}_best.png",
             )
 
-    def on_run_completed(self, context: "RunContext", final_result: object) -> None:
+    def on_run_completed(self, context: RunContext, final_result: object) -> None:
         if self._render_on_run_completed and context.current_best_genome is not None:
             self._render_best_genome_topology(
                 context.current_best_genome,
