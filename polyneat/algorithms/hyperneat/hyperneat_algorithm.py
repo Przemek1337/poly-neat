@@ -61,11 +61,10 @@ class HyperNEATAlgorithm(NEATAlgorithm):
     def _build_mutation(cls, config: NEATConfig) -> MutationOperator[NEATGenome]:
         """Compose NEAT's mutations, swapping in the random-activation add-node.
 
-        Every rate mirrors ``NEATAlgorithm._build_mutation``; only the add-node
-        operator differs, assigning each newly inserted CPPN node a random
-        activation from ``config.available_activation_functions`` so CPPNs
-        compose heterogeneous functions (Stanley et al. 2009, Section 3.2). All
-        fields read here exist on ``NEATConfig``, so no cast is needed.
+        Mirrors ``NEATAlgorithm._build_mutation``; the add-node operator is
+        replaced by one that assigns each inserted node a random activation from
+        ``config.available_activation_functions`` (Stanley et al. 2009,
+        Section 3.2).
 
         Args:
             config: Validated config supplying the mutation rates and CPPN

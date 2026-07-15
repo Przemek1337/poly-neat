@@ -1,26 +1,13 @@
-"""Visual Discrimination with HyperNEAT - the paper's flagship experiment.
+"""Visual discrimination with HyperNEAT - PolyNEAT end-to-end demo.
 
 Reproduces Stanley, D'Ambrosio & Gauci (2009), Section 4: locate the center of
-the *larger* of two black squares in a 2-D visual field. This is the task that
-demonstrates HyperNEAT's core strength - exploiting geometric regularity - and
-where it decisively beats a direct encoding (their "P-NEAT").
-
-Why it fits HyperNEAT (and MNIST digit-ID did not): the correct solution is the
-SAME local motif repeated at every location - "strongly connect each input node
-to the output nodes around the corresponding location, so an output accumulates
-more activation the more adjacent loci feed into it" (paper Section 4.1). The
-larger object has more pixels, so its center accumulates the most activation.
-That motif is a translation-invariant receptive field: high weight when source
-and target coordinates are close. A connective CPPN expresses exactly this as a
-Gaussian of (x1-x2, y1-y2) - one regularity, reused across the whole grid. A
-direct encoding (P-NEAT) must instead discover all R^4 weights independently.
+the larger of two black squares in a 2-D visual field.
 
 Substrate: a state-space sandwich (paper figure 6c) - an R x R visual-field
-input sheet wired directly to an R x R target-field output sheet, no hidden
-layer, both sheets sharing the coordinate square [-1, 1] x [-1, 1]. Output nodes
-use identity activation so each is the weighted sum of its inputs (the
-"accumulation" the paper describes); the substrate's selection is the argmax
-output node.
+input sheet wired directly to an R x R target-field output sheet, with no hidden
+layer and both sheets sharing the coordinate square [-1, 1] x [-1, 1]. Output
+nodes use identity activation, so each output is the weighted sum of its inputs
+and the network's selection is the argmax output node.
 
 Run from the repository root:
     uv run python examples/visual_discrimination_hyperneat.py
@@ -43,9 +30,8 @@ from polyneat.evaluators.visual_discrimination_evaluator import (
 _THIS_DIR = Path(__file__).parent
 _ARTIFACTS_DIR = _THIS_DIR / "visual_discrimination_artifacts"
 
-# Paper evolves at 11 x 11 (121 in, 121 out, 14,641 connections). This demo uses
-# a smaller field for CPU-friendly runtime; the whole point of HyperNEAT is that
-# the SAME evolved CPPN scales to higher resolution without re-evolving.
+# The paper evolves an 11 x 11 field (121 in, 121 out, 14,641 connections); this
+# demo uses a smaller field for CPU-friendly runtime.
 FIELD_SIDE = 7
 BIG_OBJECT_SIDE = 3
 SMALL_OBJECT_SIDE = 1
@@ -58,8 +44,8 @@ def build_visual_discrimination_algorithm(
 ) -> NEATAlgorithm:
     """HyperNEAT assembled with the two-sheet visual-field substrate injected.
 
-    Both sheets share the coordinate square so "source near target" means spatial
-    locality - the geometry the paper's receptive-field solution exploits.
+    Both sheets share the coordinate square, so nearby source and target
+    coordinates correspond to spatially local connections.
     """
     base_algorithm = pn.HyperNEATAlgorithm.from_config(config)
     device = torch.device(config.device_for_phenotype_evaluation)

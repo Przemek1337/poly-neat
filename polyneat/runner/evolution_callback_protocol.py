@@ -45,7 +45,7 @@ class EvolutionCallback(Protocol):
 
 
 class BaseEvolutionCallback:
-    """Convenience base with no-op defaults; subclass and override only what you need."""
+    """Convenience base with no-op defaults; subclasses override only the hooks they need."""
 
     def on_run_started(self, context: RunContext) -> None:
         pass

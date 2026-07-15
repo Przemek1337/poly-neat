@@ -1,4 +1,4 @@
-"""Fitness for the visual discrimination task (HyperNEAT's flagship experiment).
+"""Fitness for the visual discrimination task.
 
 References:
     Stanley, K. O., D'Ambrosio, D. B., & Gauci, J. (2009). A hypercube-based
@@ -83,18 +83,15 @@ def generate_visual_discrimination_trials(
 
 
 class VisualDiscriminationFitnessEvaluator(SequentialFitnessEvaluator):
-    """Fitness = mean ``1 - normalized_distance`` from the picked node to the
-    true big-object center over all trials.
+    """Score a phenotype on the visual discrimination task.
 
-    Scores a phenotype on the visual discrimination task (Stanley, D'Ambrosio &
-    Gauci, 2009, Section 4): the substrate's selection is the argmax output
-    node, interpreted as a location in the ``field_side x field_side`` target
-    field. The paper uses the sum of squared distances between the target and
-    the point of highest activation (Section 4.2); this uses the same distance
-    signal, normalized to a smooth per-trial reward in ``[0, 1]`` (1.0 =
-    perfect), which keeps fitness positive for the reproduction machinery and
-    rewards being close but not perfect - the smooth gradient the paper calls
-    for.
+    The substrate's selection is the argmax output node, interpreted as a
+    location in the ``field_side x field_side`` target field. Where the paper
+    (Stanley, D'Ambrosio & Gauci, 2009, Section 4.2) uses the sum of squared
+    distances between the target and the point of highest activation, this uses
+    the same distance signal normalized to a smooth per-trial reward in
+    ``[0, 1]`` (1.0 = the exact center), keeping fitness positive for the
+    reproduction machinery.
     """
 
     def __init__(

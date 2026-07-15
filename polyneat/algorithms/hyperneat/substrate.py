@@ -234,13 +234,10 @@ def build_grid_sandwich_substrate(
             plane so it never coincides with a sheet node).
         output_sheet_shares_input_plane: When True the output grid occupies the
             same ``[coordinate_range_min, coordinate_range_max]^2`` square as the
-            input, so "source coordinate near target coordinate" means spatial
-            locality -- the right geometry for translation-invariant tasks like
-            visual discrimination. When False the output sheet is lifted into a
-            coordinate band above the input plane, letting the CPPN distinguish
-            input positions from output positions -- the right choice when the
-            outputs (e.g. class labels) have no spatial relationship to the
-            input pixels.
+            input, so nearby source and target coordinates are spatially local.
+            When False the output sheet is lifted into a coordinate band above
+            the input plane, letting the CPPN distinguish input positions from
+            output positions.
 
     Returns:
         The assembled two-sheet `Substrate`.

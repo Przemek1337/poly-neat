@@ -1,20 +1,16 @@
 """MNIST digit classification with HyperNEAT - PolyNEAT end-to-end demo.
 
-Where ``mnist_neat.py`` grows a network's topology directly, HyperNEAT instead
-evolves a small CPPN that *paints* the connection weights of a fixed substrate
-as a function of geometry. The substrate here is a state-space "sandwich"
+HyperNEAT evolves a small CPPN that paints the connection weights of a fixed
+substrate as a function of geometry. The substrate is a state-space sandwich
 (Stanley, D'Ambrosio & Gauci, 2009, figure 6c): a ``GRID x GRID`` input sheet
 whose nodes sit at their pixel coordinates, wired directly to a row of ten
-output nodes, with no hidden layer. The paper notes sandwich substrates have no
-hidden nodes; with linear (``identity``) output activation the substrate is a
-multinomial logistic regression whose 49x10 weight matrix is a smooth function
-of pixel position -- so the CPPN can exploit the 2-D image geometry that vanilla
-NEAT is blind to.
+output nodes with no hidden layer. With linear (``identity``) output activation
+the substrate is a multinomial logistic regression whose 49x10 weight matrix is
+a smooth function of pixel position.
 
-The 28x28 images are average-pooled to ``GRID x GRID`` (as in the NEAT demo) to
-keep the number of queried connections small. Training uses the smooth
-softmax-likelihood fitness; the best genome is reported as accuracy on train and
-a held-out test subset.
+The 28x28 images are average-pooled to ``GRID x GRID`` to keep the number of
+queried connections small. Training uses the smooth softmax-likelihood fitness;
+the best genome is reported as accuracy on train and a held-out test subset.
 
 The dataset is downloaded once (standard Keras ``mnist.npz``) and cached under
 ``examples/mnist_data/``. Only numpy and torch are required.
@@ -62,13 +58,12 @@ def build_mnist_hyperneat_algorithm(
 ) -> NEATAlgorithm:
     """Assemble a HyperNEAT algorithm whose decoder uses a 2-D image substrate.
 
-    Starts from the standard ``HyperNEATAlgorithm.from_config`` (CPPN genetics + a
-    fully-connected 4-input/1-output CPPN initial population), then swaps in a
-    phenotype decoder over a two-sheet sandwich substrate: a ``grid_side x
-    grid_side`` input pixel grid and a row of ``number_of_classes`` output nodes.
-    ``output_sheet_shares_input_plane=False`` lifts the output row into a
-    separate coordinate band, since digit classes have no spatial relationship to
-    the pixels and the CPPN needs to tell input positions from output positions.
+    Builds the algorithm with ``HyperNEATAlgorithm.from_config`` and replaces its
+    decoder with one over a two-sheet sandwich substrate: a ``grid_side x
+    grid_side`` input pixel grid wired to a row of ``number_of_classes`` output
+    nodes. ``output_sheet_shares_input_plane=False`` lifts the output row into a
+    separate coordinate band, since the classes have no spatial relationship to
+    the pixels.
     """
     base_algorithm = pn.HyperNEATAlgorithm.from_config(config)
 
