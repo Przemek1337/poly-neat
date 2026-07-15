@@ -66,6 +66,14 @@ class HyperNEATAlgorithm(NEATAlgorithm):
         activation from ``config.available_activation_functions`` so CPPNs
         compose heterogeneous functions (Stanley et al. 2009, Section 3.2). All
         fields read here exist on ``NEATConfig``, so no cast is needed.
+
+        Args:
+            config: Validated config supplying the mutation rates and CPPN
+                function set (a ``HyperNEATConfig``, though only ``NEATConfig``
+                fields are read here).
+
+        Returns:
+            The composite CPPN mutation operator.
         """
         return CompositeNEATMutation(
             ordered_individual_mutations=[
@@ -95,13 +103,21 @@ class HyperNEATAlgorithm(NEATAlgorithm):
     def _build_phenotype_decoder(
         cls, config: NEATConfig, device: torch.device
     ) -> PhenotypeDecoder[NEATGenome]:
-        """Build the substrate decoder over a layered substrate from config.
+        """Build the CPPN-to-substrate decoder over a layered substrate.
 
-        Reads substrate fields that exist only on ``HyperNEATConfig``, so the
-        incoming config is cast to it (``from_config`` must be called with a
-        ``HyperNEATConfig``). Examples needing a different substrate (e.g. a grid
-        sandwich) build their own ``HyperNEATPhenotypeDecoder`` and inject it
-        with ``dataclasses.replace`` after ``from_config``.
+        The config is narrowed to ``HyperNEATConfig`` to access the substrate
+        fields; ``from_config`` must be called with a
+        ``HyperNEATConfig``. A non-layered substrate (e.g. a grid sandwich) is
+        supported by replacing this decoder via ``dataclasses.replace`` on the
+        constructed algorithm.
+
+        Args:
+            config: Validated ``HyperNEATConfig`` describing the substrate and
+                the CPPN-output-to-weight interpretation.
+            device: Torch device the substrate phenotypes run on.
+
+        Returns:
+            The CPPN-to-substrate phenotype decoder.
         """
         hyperneat_config = cast("HyperNEATConfig", config)
         substrate = build_layered_substrate(
