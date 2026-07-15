@@ -1,3 +1,3 @@
-﻿SpeciesId = int
+SpeciesId = int
 InnovationId = int
 FitnessValue = float

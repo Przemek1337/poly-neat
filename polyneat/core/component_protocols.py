@@ -51,7 +51,11 @@ GenomeType = TypeVar("GenomeType", bound=Genome)
 
 @runtime_checkable
 class InnovationTracker(Protocol):
-    """Issues globally-unique InnovationIds for new structural mutations."""
+    """Issues globally-unique InnovationIds for new structural mutations.
+
+    The historical markings of Stanley & Miikkulainen (2002), section 3.2 —
+    shared by every NEAT-family algorithm so crossover can align genes.
+    """
 
     def get_or_assign_innovation_id_for_connection(
         self, source_node_id: int, target_node_id: int
@@ -104,6 +108,8 @@ class MutationOperator(Protocol[GenomeType]):
 
 @runtime_checkable
 class CrossoverOperator(Protocol[GenomeType]):
+    """Mates two parents into one child; the fitter parent goes first."""
+
     def apply_to_parents(
         self,
         fitter_parent: GenomeType,
@@ -114,6 +120,8 @@ class CrossoverOperator(Protocol[GenomeType]):
 
 @runtime_checkable
 class ParentSelection(Protocol[GenomeType]):
+    """Selects reproduction parents from a candidate pool."""
+
     def select_parents(
         self,
         candidate_genomes: list[GenomeType],
@@ -125,7 +133,7 @@ class ParentSelection(Protocol[GenomeType]):
 
 @runtime_checkable
 class Speciator(Protocol[GenomeType]):
-    """Assigns each genome to a species."""
+    """Assigns each genome to a species (Stanley & Miikkulainen 2002, section 3.3)."""
 
     def assign_genomes_to_species(
         self, genomes: list[GenomeType], rng: Generator
@@ -136,9 +144,7 @@ class Speciator(Protocol[GenomeType]):
 class FitnessEvaluator(Protocol):
     """Measures fitness. Batch is the primary interface."""
 
-    def evaluate_batch_of_phenotypes(
-        self, phenotypes: list[Phenotype]
-    ) -> list[FitnessValue]: ...
+    def evaluate_batch_of_phenotypes(self, phenotypes: list[Phenotype]) -> list[FitnessValue]: ...
 
 
 @runtime_checkable

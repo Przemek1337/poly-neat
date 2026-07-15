@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -8,8 +8,18 @@ from polyneat.config.configuration_errors import ConfigurationError
 
 @dataclass
 class NEATConfig(AlgorithmConfig):
+    """All NEAT-specific hyperparameters.
+
+    Defaults follow the experimental settings of Stanley & Miikkulainen
+    (2002), section 4.1, wherever the paper specifies a value (mutation
+    rates, compatibility coefficients c1/c2/c3 and threshold, interspecies
+    mating rate, crossover fraction, stagnation limit). ``validate`` raises
+    :class:`~polyneat.config.configuration_errors.ConfigurationError` on any
+    out-of-range value.
+    """
+
     # Initial population. Name resolved against the strategy registry in
-    # polyneat.algorithms.neat.initial_population at NEATAlgorithm.from_config
+    # polyneat.core.neat.initial_population at NEATAlgorithm.from_config
     # time (not here, to keep config free of algorithm imports).
     initial_population_strategy: str = "fully_connected"
 
@@ -56,6 +66,11 @@ class NEATConfig(AlgorithmConfig):
     default_activation_function_for_output_nodes: str = "steepened_sigmoid"
 
     def validate(self) -> None:
+        """Check ranges of all NEAT fields on top of the base validation.
+
+        Raises:
+            ConfigurationError: Naming the field, the value, and the reason.
+        """
         super().validate()
         for prob_field in (
             "probability_of_add_node_mutation",
@@ -69,9 +84,7 @@ class NEATConfig(AlgorithmConfig):
         ):
             value = getattr(self, prob_field)
             if not (0.0 <= value <= 1.0):
-                raise ConfigurationError(
-                    f"{prob_field} must be in [0.0, 1.0], got {value}"
-                )
+                raise ConfigurationError(f"{prob_field} must be in [0.0, 1.0], got {value}")
         if not (0.0 < self.species_survival_fraction_for_reproduction <= 1.0):
             raise ConfigurationError(
                 f"species_survival_fraction_for_reproduction must be in (0.0, 1.0], "
@@ -82,13 +95,19 @@ class NEATConfig(AlgorithmConfig):
                 f"initial_weight_range_min ({self.initial_weight_range_min}) must be "
                 f"< initial_weight_range_max ({self.initial_weight_range_max})"
             )
-        if self.default_activation_function_for_hidden_nodes not in self.available_activation_functions:
+        if (
+            self.default_activation_function_for_hidden_nodes
+            not in self.available_activation_functions
+        ):
             raise ConfigurationError(
                 f"default_activation_function_for_hidden_nodes "
                 f"'{self.default_activation_function_for_hidden_nodes}' "
                 f"not in available_activation_functions {self.available_activation_functions}"
             )
-        if self.default_activation_function_for_output_nodes not in self.available_activation_functions:
+        if (
+            self.default_activation_function_for_output_nodes
+            not in self.available_activation_functions
+        ):
             raise ConfigurationError(
                 f"default_activation_function_for_output_nodes "
                 f"'{self.default_activation_function_for_output_nodes}' "

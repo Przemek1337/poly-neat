@@ -13,8 +13,12 @@ The dataset is downloaded once (as the standard Keras ``mnist.npz``) and cached
 under ``examples/mnist_data/``. Only numpy and torch are required.
 
 Run from the repository root:
-    uv run python examples/mnist_neat.py
+    uv run python examples/mnist_neat.py [--cpu | --gpu]
+
+Artifacts (best genome, TensorBoard event files under tensorboard/) are
+written to examples/mnist_artifacts/.
 """
+
 from __future__ import annotations
 
 import urllib.request
@@ -22,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from _example_cli import parse_device_from_cli
 
 import polyneat as pn
 from polyneat.evaluators.classification_accuracy_evaluator import (
@@ -114,9 +119,7 @@ def _load_mnist_subsets() -> tuple[
     train_images, test_images = _standardize_features(train_images, test_images)
 
     subset_rng = np.random.default_rng(_SUBSET_SAMPLING_SEED)
-    training_subset = _sample_subset(
-        train_images, train_labels, TRAINING_SUBSET_SIZE, subset_rng
-    )
+    training_subset = _sample_subset(train_images, train_labels, TRAINING_SUBSET_SIZE, subset_rng)
     test_subset = _sample_subset(test_images, test_labels, TEST_SUBSET_SIZE, subset_rng)
     return training_subset, test_subset
 
@@ -132,6 +135,7 @@ def _build_parallel_softmax_evaluator(
 
 def main() -> None:
     """Evolve an MNIST classifier and print training and test accuracy."""
+    device = parse_device_from_cli()
     (train_features, train_labels), (test_features, test_labels) = _load_mnist_subsets()
     number_of_input_features = train_features.shape[1]
     print(
@@ -144,7 +148,7 @@ def main() -> None:
     config.number_of_input_nodes = number_of_input_features
     config.number_of_output_nodes = NUMBER_OF_CLASSES
 
-    algorithm = pn.NEATAlgorithm.from_config(config)
+    algorithm = pn.NEATAlgorithm.from_config(config, device_for_phenotype_computation=device)
 
     training_evaluator = _build_parallel_softmax_evaluator(train_features, train_labels)
 
@@ -161,6 +165,7 @@ def main() -> None:
         callbacks=[
             pn.ConsoleStatisticsLogger(),
             pn.BestGenomePersister(output_directory=_ARTIFACTS_DIR),
+            pn.TensorBoardLogger(log_directory=_ARTIFACTS_DIR / "tensorboard"),
         ],
         random_seed=config.random_seed,
     )

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from polyneat.algorithms.neat.tournament_parent_selection import TournamentParentSelection
+from polyneat.core.neat.tournament_parent_selection import TournamentParentSelection
 
 
 @dataclass(frozen=True)
@@ -25,9 +25,7 @@ class _StubGenome:
 def test_selection_works_with_non_neat_genome_type() -> None:
     genomes = [_StubGenome("weak"), _StubGenome("strong")]
     fitnesses = [0.0, 10.0]
-    selection: TournamentParentSelection[_StubGenome] = TournamentParentSelection(
-        tournament_size=5
-    )
+    selection: TournamentParentSelection[_StubGenome] = TournamentParentSelection(tournament_size=5)
     selected = selection.select_parents(
         candidate_genomes=genomes,
         candidate_fitnesses=fitnesses,
@@ -41,9 +39,7 @@ def test_selection_works_with_non_neat_genome_type() -> None:
 def test_large_tournament_prefers_fitter_genome() -> None:
     genomes = [_StubGenome("weak"), _StubGenome("strong")]
     fitnesses = [0.0, 10.0]
-    selection: TournamentParentSelection[_StubGenome] = TournamentParentSelection(
-        tournament_size=5
-    )
+    selection: TournamentParentSelection[_StubGenome] = TournamentParentSelection(tournament_size=5)
     selected = selection.select_parents(
         candidate_genomes=genomes,
         candidate_fitnesses=fitnesses,

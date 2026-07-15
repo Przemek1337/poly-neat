@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome
 from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
 

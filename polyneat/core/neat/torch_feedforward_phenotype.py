@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from polyneat.algorithms.neat.neat_genome import NEATGenome, NodeGene
+from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.nn.activation_functions import (
     ActivationFunction,
     resolve_activation_function_by_name,
@@ -30,6 +30,12 @@ class TorchFeedForwardPhenotype(nn.Module):
         neat_genome: NEATGenome,
         device_for_computation: torch.device,
     ) -> None:
+        """Precompute the evaluation order and connection tables for the genome.
+
+        Args:
+            neat_genome: Genome to express; only enabled connections are used.
+            device_for_computation: Device all tensors are created on.
+        """
         super().__init__()
         self._device_for_computation = device_for_computation
 
@@ -41,8 +47,8 @@ class TorchFeedForwardPhenotype(nn.Module):
 
         for node_gene in neat_genome.node_genes:
             node_id_to_node_type[node_gene.node_id] = node_gene.node_type
-            node_id_to_activation_function[node_gene.node_id] = (
-                resolve_activation_function_by_name(node_gene.activation_function_name)
+            node_id_to_activation_function[node_gene.node_id] = resolve_activation_function_by_name(
+                node_gene.activation_function_name
             )
             if node_gene.node_type == "input":
                 input_node_ids_in_registration_order.append(node_gene.node_id)
@@ -82,6 +88,17 @@ class TorchFeedForwardPhenotype(nn.Module):
         self.to(device_for_computation)
 
     def forward_pass(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        """Evaluate the network on a batch of inputs.
+
+        Args:
+            input_tensor: Shape ``(batch, num_inputs)`` — or ``(num_inputs,)``,
+                which is treated as a batch of one.
+
+        Returns:
+            Output activations of shape ``(batch, num_outputs)``, with output
+            columns in node registration order. Outputs with no enabled
+            incoming path yield zeros.
+        """
         input_tensor_on_target_device = input_tensor.to(self._device_for_computation)
         if input_tensor_on_target_device.dim() == 1:
             input_tensor_on_target_device = input_tensor_on_target_device.unsqueeze(0)
@@ -92,9 +109,9 @@ class TorchFeedForwardPhenotype(nn.Module):
         for input_slot_position, input_node_id in enumerate(
             self._input_node_ids_in_registration_order
         ):
-            node_activations_by_node_id[input_node_id] = (
-                input_tensor_on_target_device[:, input_slot_position]
-            )
+            node_activations_by_node_id[input_node_id] = input_tensor_on_target_device[
+                :, input_slot_position
+            ]
 
         for bias_node_id in self._bias_node_ids_in_registration_order:
             node_activations_by_node_id[bias_node_id] = torch.ones(
@@ -117,11 +134,11 @@ class TorchFeedForwardPhenotype(nn.Module):
                     node_activations_by_node_id[source_node_id] * connection_weight
                 )
 
-            activation_function_for_current_node = (
-                self._node_id_to_activation_function[current_node_id]
-            )
-            node_activations_by_node_id[current_node_id] = (
-                activation_function_for_current_node(weighted_input_sum)
+            activation_function_for_current_node = self._node_id_to_activation_function[
+                current_node_id
+            ]
+            node_activations_by_node_id[current_node_id] = activation_function_for_current_node(
+                weighted_input_sum
             )
 
         output_columns_in_registration_order = [

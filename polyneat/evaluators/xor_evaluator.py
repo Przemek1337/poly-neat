@@ -6,14 +6,16 @@ from polyneat.core.component_protocols import Phenotype
 from polyneat.core.type_aliases import FitnessValue
 from polyneat.evaluators.sequential_evaluator_base import SequentialFitnessEvaluator
 
-_XOR_INPUT_PATTERNS: torch.Tensor = torch.tensor(
-    [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
-)
+_XOR_INPUT_PATTERNS: torch.Tensor = torch.tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
 _XOR_EXPECTED_OUTPUTS: torch.Tensor = torch.tensor([0.0, 1.0, 1.0, 0.0])
 
 
 class XORFitnessEvaluator(SequentialFitnessEvaluator):
     """Evaluates a phenotype on all four XOR input patterns.
+
+    XOR is the structure-growing verification task of Stanley & Miikkulainen
+    (2002), section 4.2: it is not linearly separable, so the network must
+    evolve at least one hidden node to solve it.
 
     Fitness is the sum of (1 - (expected - actual)^2) across the four patterns,
     giving a maximum of 4.0. A genome that perfectly solves XOR scores exactly
@@ -26,6 +28,7 @@ class XORFitnessEvaluator(SequentialFitnessEvaluator):
     """
 
     def evaluate_single_phenotype(self, phenotype: Phenotype) -> FitnessValue:
+        """Return the XOR fitness of ``phenotype``, clamped to ``[0.0, 4.0]``."""
         with torch.no_grad():
             output_tensor = phenotype.forward_pass(_XOR_INPUT_PATTERNS)
         predicted = output_tensor[:, 0].cpu()

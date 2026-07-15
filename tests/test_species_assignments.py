@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
 from polyneat.config.neat_config import NEATConfig
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 
 
 def test_offspring_population_carries_species_assignments(
@@ -18,9 +18,7 @@ def test_offspring_population_carries_species_assignments(
 
     assert next_population.species_assignments is not None
     assert len(next_population.species_assignments) == small_neat_config.population_size
-    assert all(
-        isinstance(species_id, int) for species_id in next_population.species_assignments
-    )
+    assert all(isinstance(species_id, int) for species_id in next_population.species_assignments)
 
 
 def test_species_assignments_stay_aligned_across_generations(

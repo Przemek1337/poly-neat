@@ -1,3 +1,5 @@
+"""Historical markings: global innovation numbers (paper, section 3.2)."""
+
 from __future__ import annotations
 
 from polyneat.core.type_aliases import InnovationId
@@ -9,7 +11,8 @@ logger = get_logger(__name__)
 class GlobalInnovationTracker:
     """Issues globally-unique InnovationIds for new structural mutations.
 
-    NEAT's crossover aligns genes by their ``innovation_id``. When two genomes
+    Implements the historical markings of Stanley & Miikkulainen (2002),
+    section 3.2. NEAT's crossover aligns genes by their ``innovation_id``. When two genomes
     receive the *same* structural mutation (same source, same target) inside
     the same generation, they must receive the *same* innovation id — otherwise
     matching structures would be treated as disjoint and crossover would waste
@@ -29,6 +32,16 @@ class GlobalInnovationTracker:
         source_node_id: int,
         target_node_id: int,
     ) -> InnovationId:
+        """Return the innovation id for a connection, deduplicated per generation.
+
+        Args:
+            source_node_id: Id of the connection's source node.
+            target_node_id: Id of the connection's target node.
+
+        Returns:
+            The id previously assigned to this ``(source, target)`` pair in
+            the current generation, or a freshly incremented one.
+        """
         edge_key = (source_node_id, target_node_id)
         cached_innovation_id = self._within_generation_edge_to_innovation_id.get(edge_key)
         if cached_innovation_id is not None:

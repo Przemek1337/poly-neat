@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -12,11 +12,13 @@ logger = get_logger(__name__)
 class AddNodeMutation:
     """Splits an enabled connection by inserting a new hidden node.
 
-    Stanley's rule: pick a random enabled connection, disable it, insert a
-    hidden node, and add two new connections. The connection *into* the new
-    node has weight 1.0, and the connection *out of* the new node has the
-    original connection's weight. This preserves the network's behaviour at
-    the moment of insertion.
+    The second structural mutation of Stanley & Miikkulainen (2002),
+    section 3.1 (Figure 3): pick a random enabled connection, disable it,
+    insert a hidden node, and add two new connections. The connection *into*
+    the new node has weight 1.0, and the connection *out of* the new node has
+    the original connection's weight — chosen to minimize the initial impact
+    of the mutation, so the new structure has time to be optimized instead of
+    being selected away immediately.
     """
 
     def __init__(

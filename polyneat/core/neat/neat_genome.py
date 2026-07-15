@@ -1,3 +1,11 @@
+"""NEAT's direct genetic encoding: node genes and connection genes.
+
+Implements the genome representation of Stanley & Miikkulainen (2002),
+section 3.1: a genome is a list of node genes plus a list of connection
+genes, where each connection gene carries an innovation number (historical
+marking, section 3.2) that lets crossover align corresponding genes.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +24,16 @@ class InvalidGenomeError(ValueError):
 
 @dataclass(frozen=True)
 class NodeGene:
+    """One node of the network (paper, section 3.1).
+
+    Attributes:
+        node_id: Unique id within the genome.
+        node_type: One of ``input``, ``hidden``, ``output``, ``bias``. The
+            bias node is an input that is always set to 1.0 (section 4.2).
+        activation_function_name: Name resolved via
+            :func:`polyneat.nn.activation_functions.resolve_activation_function_by_name`.
+    """
+
     node_id: int
     node_type: NodeType
     activation_function_name: str
@@ -30,6 +48,20 @@ class NodeGene:
 
 @dataclass(frozen=True)
 class ConnectionGene:
+    """One weighted directed connection (paper, section 3.1).
+
+    Attributes:
+        innovation_id: Historical marking (section 3.2). Genes carrying the
+            same innovation id in two genomes represent the same structure
+            and are aligned by crossover.
+        source_node_id: Id of the node the connection leaves.
+        target_node_id: Id of the node the connection enters.
+        weight: Connection weight.
+        is_enabled: Expression flag; ``AddNodeMutation`` disables the split
+            connection instead of deleting it, so the gene can be re-enabled
+            later.
+    """
+
     innovation_id: InnovationId
     source_node_id: int
     target_node_id: int
@@ -39,7 +71,19 @@ class ConnectionGene:
 
 @dataclass(frozen=True)
 class NEATGenome:
-    """Direct-encoding NEAT genome: tuple of nodes + tuple of connections."""
+    """Direct-encoding NEAT genome: tuple of nodes + tuple of connections.
+
+    Immutable — every operator returns a new genome instead of mutating in
+    place. ``__post_init__`` validates structural integrity (no duplicate
+    node ids or innovation ids, no dangling connection endpoints).
+
+    Attributes:
+        node_genes: All node genes of the genome.
+        connection_genes: All connection genes, enabled or not.
+
+    Raises:
+        InvalidGenomeError: If the genome is structurally invalid.
+    """
 
     node_genes: tuple[NodeGene, ...]
     connection_genes: tuple[ConnectionGene, ...]
@@ -57,8 +101,7 @@ class NEATGenome:
         for connection_gene in self.connection_genes:
             if connection_gene.innovation_id in innovation_ids_seen:
                 raise InvalidGenomeError(
-                    f"NEATGenome contains duplicate innovation_id="
-                    f"{connection_gene.innovation_id}"
+                    f"NEATGenome contains duplicate innovation_id={connection_gene.innovation_id}"
                 )
             innovation_ids_seen.add(connection_gene.innovation_id)
             if connection_gene.source_node_id not in node_ids_seen:
@@ -72,13 +115,15 @@ class NEATGenome:
                     f"references missing target_node_id={connection_gene.target_node_id}"
                 )
 
-    def clone_genome(self) -> "NEATGenome":
+    def clone_genome(self) -> NEATGenome:
+        """Return a structural copy (gene tuples are immutable and shared)."""
         return NEATGenome(
             node_genes=self.node_genes,
             connection_genes=self.connection_genes,
         )
 
     def get_node_gene_by_id(self, node_id: int) -> NodeGene | None:
+        """Return the node gene with ``node_id``, or ``None`` when absent."""
         for node_gene in self.node_genes:
             if node_gene.node_id == node_id:
                 return node_gene
@@ -87,12 +132,14 @@ class NEATGenome:
     def get_connection_gene_by_innovation_id(
         self, innovation_id: InnovationId
     ) -> ConnectionGene | None:
+        """Return the connection gene with ``innovation_id``, or ``None``."""
         for connection_gene in self.connection_genes:
             if connection_gene.innovation_id == innovation_id:
                 return connection_gene
         return None
 
     def to_serializable_dict(self) -> dict:
+        """Return a JSON-serializable dict round-trippable via ``from_serializable_dict``."""
         return {
             "node_genes": [
                 {
@@ -115,7 +162,19 @@ class NEATGenome:
         }
 
     @classmethod
-    def from_serializable_dict(cls, payload: dict) -> "NEATGenome":
+    def from_serializable_dict(cls, payload: dict) -> NEATGenome:
+        """Rebuild a genome from ``to_serializable_dict`` output.
+
+        Args:
+            payload: Dict with ``node_genes`` and ``connection_genes`` lists.
+
+        Returns:
+            The reconstructed genome.
+
+        Raises:
+            ConfigurationError: If a required key is missing.
+            InvalidGenomeError: If the payload describes an invalid genome.
+        """
         try:
             node_gene_payloads = payload["node_genes"]
             connection_gene_payloads = payload["connection_genes"]
