@@ -24,6 +24,7 @@ class _NeatShapedGenome(Protocol):
     node_genes: tuple[Any, ...]
     connection_genes: tuple[Any, ...]
 
+
 NODE_TYPE_TO_FILL_COLOR: dict[str, str] = {
     "input": "#4fc3f7",
     "output": "#81c784",
@@ -33,13 +34,17 @@ NODE_TYPE_TO_FILL_COLOR: dict[str, str] = {
 UNKNOWN_NODE_TYPE_FILL_COLOR = "#e0e0e0"
 
 
-def render_genome_topology(genome: "Genome", output_path: Path) -> None:
+def render_genome_topology(genome: Genome, output_path: Path) -> None:
     """Render the genome's network topology to ``output_path`` (PNG or SVG).
 
     The genome must expose ``node_genes`` and ``connection_genes`` attributes
     with fields matching the NEAT gene shape. Genomes that do not conform are
     skipped with a warning rather than raised, so this renderer is safe to
     attach as an unconditional callback.
+
+    Args:
+        genome: Genome to draw; only enabled connections become edges.
+        output_path: Target file; suffix picks the format (``.svg`` or PNG).
     """
     if not _genome_has_neat_shape(genome):
         logger.warning(
