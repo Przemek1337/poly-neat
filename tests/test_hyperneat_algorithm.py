@@ -6,16 +6,16 @@ import torch
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
 )
-from polyneat.algorithms.hyperneat.factory import make_hyperneat_algorithm
+from polyneat.algorithms.hyperneat.hyperneat_algorithm import HyperNEATAlgorithm
 from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
     HyperNEATPhenotypeDecoder,
 )
-from polyneat.algorithms.neat.mutations.composite_neat_mutation import (
+from polyneat.config.hyperneat_config import HyperNEATConfig
+from polyneat.core.neat.mutations.composite_neat_mutation import (
     CompositeNEATMutation,
 )
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
-from polyneat.algorithms.neat.neat_genome import NEATGenome
-from polyneat.config.hyperneat_config import HyperNEATConfig
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
+from polyneat.core.neat.neat_genome import NEATGenome
 
 
 def _small_config() -> HyperNEATConfig:
@@ -28,15 +28,15 @@ def _small_config() -> HyperNEATConfig:
     )
 
 
-def test_factory_returns_a_plain_neat_algorithm_not_a_subclass():
-    algorithm = make_hyperneat_algorithm(_small_config())
-    # architecture Case 1: the factory returns a configured NEATAlgorithm,
-    # and there is no HyperNEATAlgorithm subclass at all.
-    assert type(algorithm) is NEATAlgorithm
+def test_from_config_returns_a_hyperneat_algorithm():
+    algorithm = HyperNEATAlgorithm.from_config(_small_config())
+    # subclass + template method: from_config is inherited and returns the subclass
+    assert type(algorithm) is HyperNEATAlgorithm
+    assert isinstance(algorithm, NEATAlgorithm)
 
 
-def test_factory_installs_hyperneat_decoder_and_random_activation_mutation():
-    algorithm = make_hyperneat_algorithm(_small_config())
+def test_installs_hyperneat_decoder_and_random_activation_mutation():
+    algorithm = HyperNEATAlgorithm.from_config(_small_config())
     assert isinstance(algorithm.phenotype_decoder, HyperNEATPhenotypeDecoder)
     assert isinstance(algorithm.mutation, CompositeNEATMutation)
     has_random_activation_add_node = any(
@@ -47,7 +47,7 @@ def test_factory_installs_hyperneat_decoder_and_random_activation_mutation():
 
 
 def test_initial_population_genomes_are_cppns_with_four_inputs():
-    algorithm = make_hyperneat_algorithm(_small_config())
+    algorithm = HyperNEATAlgorithm.from_config(_small_config())
     population = algorithm.create_initial_population(np.random.default_rng(0))
     assert len(population.genomes) == 12
     first_genome = population.genomes[0]
@@ -59,7 +59,7 @@ def test_initial_population_genomes_are_cppns_with_four_inputs():
 
 
 def test_initial_cppn_phenotype_maps_to_a_runnable_substrate():
-    algorithm = make_hyperneat_algorithm(_small_config())
+    algorithm = HyperNEATAlgorithm.from_config(_small_config())
     population = algorithm.create_initial_population(np.random.default_rng(0))
     substrate_phenotype = algorithm.phenotype_decoder.build_phenotype_from_genome(
         population.genomes[0]
@@ -71,7 +71,7 @@ def test_initial_cppn_phenotype_maps_to_a_runnable_substrate():
 
 
 def test_advance_one_generation_runs_and_preserves_population_size():
-    algorithm = make_hyperneat_algorithm(_small_config())
+    algorithm = HyperNEATAlgorithm.from_config(_small_config())
     rng = np.random.default_rng(1)
     population = algorithm.create_initial_population(rng)
     fitnesses = [float(index) for index in range(len(population.genomes))]

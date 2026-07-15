@@ -26,7 +26,7 @@ def test_short_hyperneat_run_completes_with_finite_fitness():
         substrate_output_layer_size=1,
         random_seed=0,
     )
-    algorithm = pn.make_hyperneat_algorithm(config)
+    algorithm = pn.HyperNEATAlgorithm.from_config(config)
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
         fitness_evaluator=XORFitnessEvaluator(),

@@ -7,16 +7,17 @@ References:
     Stanley, K. O., & Miikkulainen, R. (2002). Evolving neural networks through
     augmenting topologies. Evolutionary Computation, 10(2), 99-127.
 """
+
 from __future__ import annotations
 
 from numpy.random import Generator
 
-from polyneat.algorithms.neat.mutations.add_node_mutation import (
+from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.mutations.add_node_mutation import (
     _disabled_copy_of,
     _pick_next_unused_node_id,
 )
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
-from polyneat.core.component_protocols import InnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -51,9 +52,7 @@ class AddNodeWithRandomActivationMutation:
             ValueError: If ``available_activation_function_names`` is empty.
         """
         if not available_activation_function_names:
-            raise ValueError(
-                "available_activation_function_names must be non-empty"
-            )
+            raise ValueError("available_activation_function_names must be non-empty")
         self._probability_of_application = probability_of_application
         self._available_activation_function_names = available_activation_function_names
 
@@ -85,9 +84,7 @@ class AddNodeWithRandomActivationMutation:
             if connection_gene.is_enabled
         ]
         if not enabled_connection_genes:
-            logger.debug(
-                "AddNodeWithRandomActivationMutation skipped: no enabled connections"
-            )
+            logger.debug("AddNodeWithRandomActivationMutation skipped: no enabled connections")
             return genome
 
         connection_to_split_index = int(rng.integers(0, len(enabled_connection_genes)))

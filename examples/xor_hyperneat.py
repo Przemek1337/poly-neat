@@ -25,7 +25,7 @@ _ARTIFACTS_DIR = _THIS_DIR / "xor_hyperneat_artifacts"
 def main() -> None:
     config = pn.HyperNEATConfig.load_from_yaml_file(_THIS_DIR / "xor_hyperneat.yaml")
 
-    algorithm = pn.make_hyperneat_algorithm(config)
+    algorithm = pn.HyperNEATAlgorithm.from_config(config)
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,

@@ -10,14 +10,15 @@ References:
     encoding for evolving large-scale neural networks. Artificial Life, 15(2),
     185-212.
 """
+
 from __future__ import annotations
 
 import torch
 
 from polyneat.algorithms.hyperneat.substrate import Substrate, SubstrateNode
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
-from polyneat.algorithms.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
 
 
 def scale_cppn_output_to_substrate_weight(
@@ -48,9 +49,7 @@ def scale_cppn_output_to_substrate_weight(
     if output_magnitude <= threshold:
         return None
     clamped_magnitude = min(output_magnitude, 1.0)
-    scaled_magnitude = (
-        (clamped_magnitude - threshold) / (1.0 - threshold) * max_magnitude
-    )
+    scaled_magnitude = (clamped_magnitude - threshold) / (1.0 - threshold) * max_magnitude
     sign = 1.0 if raw_cppn_output >= 0.0 else -1.0
     return sign * scaled_magnitude
 
@@ -91,17 +90,11 @@ class HyperNEATPhenotypeDecoder:
         self._substrate = substrate
         self._cppn_phenotype_decoder = cppn_phenotype_decoder
         self._weight_expression_threshold = weight_expression_threshold
-        self._max_substrate_connection_weight_magnitude = (
-            max_substrate_connection_weight_magnitude
-        )
-        self._substrate_node_activation_function_name = (
-            substrate_node_activation_function_name
-        )
+        self._max_substrate_connection_weight_magnitude = max_substrate_connection_weight_magnitude
+        self._substrate_node_activation_function_name = substrate_node_activation_function_name
         self._device_for_computation = device_for_computation
 
-    def build_phenotype_from_genome(
-        self, genome: NEATGenome
-    ) -> TorchFeedForwardPhenotype:
+    def build_phenotype_from_genome(self, genome: NEATGenome) -> TorchFeedForwardPhenotype:
         """Decode a CPPN genome into an executable substrate phenotype.
 
         Args:
@@ -190,9 +183,7 @@ class HyperNEATPhenotypeDecoder:
             if substrate_node.role in ("input", "bias"):
                 activation_function_name = "identity"
             else:
-                activation_function_name = (
-                    self._substrate_node_activation_function_name
-                )
+                activation_function_name = self._substrate_node_activation_function_name
             node_genes.append(
                 NodeGene(
                     node_id=substrate_node.node_id,
@@ -212,9 +203,7 @@ class HyperNEATPhenotypeDecoder:
             adjacent layers, plus the bias node to every hidden and output node.
         """
         candidate_pairs: list[tuple[SubstrateNode, SubstrateNode]] = []
-        for source_layer, target_layer in (
-            self._substrate.feed_forward_layer_adjacent_pairs()
-        ):
+        for source_layer, target_layer in self._substrate.feed_forward_layer_adjacent_pairs():
             for source_node in source_layer.nodes:
                 for target_node in target_layer.nodes:
                     candidate_pairs.append((source_node, target_node))

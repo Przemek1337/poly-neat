@@ -6,7 +6,7 @@ import polyneat as pn
 def test_hyperneat_symbols_are_exported():
     expected_names = [
         "HyperNEATConfig",
-        "make_hyperneat_algorithm",
+        "HyperNEATAlgorithm",
         "HyperNEATPhenotypeDecoder",
         "Substrate",
         "SubstrateLayer",
@@ -21,5 +21,5 @@ def test_hyperneat_symbols_are_exported():
 
 def test_hyperneat_factory_is_wired():
     config = pn.HyperNEATConfig(population_size=8)
-    algorithm = pn.make_hyperneat_algorithm(config)
+    algorithm = pn.HyperNEATAlgorithm.from_config(config)
     assert isinstance(algorithm.phenotype_decoder, pn.HyperNEATPhenotypeDecoder)

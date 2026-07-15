@@ -33,8 +33,8 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.evaluators.visual_discrimination_evaluator import (
     VisualDiscriminationFitnessEvaluator,
     generate_visual_discrimination_trials,
@@ -61,7 +61,7 @@ def build_visual_discrimination_algorithm(
     Both sheets share the coordinate square so "source near target" means spatial
     locality - the geometry the paper's receptive-field solution exploits.
     """
-    base_algorithm = pn.make_hyperneat_algorithm(config)
+    base_algorithm = pn.HyperNEATAlgorithm.from_config(config)
     device = torch.device(config.device_for_phenotype_evaluation)
     substrate = pn.build_grid_sandwich_substrate(
         input_grid_shape=(field_side, field_side),

@@ -11,6 +11,7 @@ References:
     encoding for evolving large-scale neural networks. Artificial Life, 15(2),
     185-212.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -108,14 +109,11 @@ class Substrate:
         """
         layers = self.ordered_layers()
         return [
-            (layers[layer_index], layers[layer_index + 1])
-            for layer_index in range(len(layers) - 1)
+            (layers[layer_index], layers[layer_index + 1]) for layer_index in range(len(layers) - 1)
         ]
 
 
-def _evenly_spaced_coordinates(
-    node_count: int, range_min: float, range_max: float
-) -> list[float]:
+def _evenly_spaced_coordinates(node_count: int, range_min: float, range_max: float) -> list[float]:
     """Return ``node_count`` coordinates spread across ``[range_min, range_max]``.
 
     Args:
@@ -257,8 +255,7 @@ def build_grid_sandwich_substrate(
     ):
         if grid_shape[0] < 1 or grid_shape[1] < 1:
             raise ValueError(
-                f"{grid_shape_name} must have positive rows and columns, "
-                f"got {grid_shape}"
+                f"{grid_shape_name} must have positive rows and columns, got {grid_shape}"
             )
 
     coordinate_span = coordinate_range_max - coordinate_range_min
@@ -313,9 +310,7 @@ def build_grid_sandwich_substrate(
         output_row_y_coordinates = [
             y_coordinate + vertical_lift for y_coordinate in output_row_y_coordinates
         ]
-    output_layer = _build_grid_layer(
-        output_grid_shape, "output", output_row_y_coordinates
-    )
+    output_layer = _build_grid_layer(output_grid_shape, "output", output_row_y_coordinates)
 
     bias_node: SubstrateNode | None = None
     if include_bias_node:

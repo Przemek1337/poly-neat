@@ -6,6 +6,21 @@ The full NEAT implementation (Stanley & Miikkulainen, 2002) lives in
 the public API.
 """
 
+from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
+from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
+    AddNodeWithRandomActivationMutation,
+)
+from polyneat.algorithms.hyperneat.hyperneat_algorithm import HyperNEATAlgorithm
+from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
+    HyperNEATPhenotypeDecoder,
+)
+from polyneat.algorithms.hyperneat.substrate import (
+    Substrate,
+    SubstrateLayer,
+    SubstrateNode,
+    build_grid_sandwich_substrate,
+    build_layered_substrate,
+)
 from polyneat.config.algorithm_config import AlgorithmConfig
 from polyneat.config.configuration_errors import ConfigurationError
 from polyneat.config.hyperneat_config import HyperNEATConfig
@@ -33,20 +48,6 @@ from polyneat.core.neat.initial_population import (
     build_fully_connected_initial_population,
     register_initial_population_strategy,
     resolve_initial_population_strategy_by_name,
-)
-from polyneat.algorithms.hyperneat.substrate import (
-    Substrate,
-    SubstrateLayer,
-    SubstrateNode,
-    build_grid_sandwich_substrate,
-    build_layered_substrate,
-)
-from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
-    AddNodeWithRandomActivationMutation,
-)
-from polyneat.algorithms.hyperneat.factory import make_hyperneat_algorithm
-from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
-    HyperNEATPhenotypeDecoder,
 )
 from polyneat.core.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.core.neat.mutations.add_node_mutation import AddNodeMutation
@@ -89,7 +90,6 @@ from polyneat.runner.evolution_callback_protocol import (
     BaseEvolutionCallback,
     EvolutionCallback,
 )
-from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.runner.evolution_runner import EvolutionResult, EvolutionRunner
 from polyneat.runner.run_context import RunContext
 from polyneat.runner.termination_criteria import (
@@ -172,7 +172,7 @@ __all__ = [
     "ToggleConnectionEnabledMutation",
     # HyperNEAT algorithm
     "HyperNEATConfig",
-    "make_hyperneat_algorithm",
+    "HyperNEATAlgorithm",
     "HyperNEATPhenotypeDecoder",
     "Substrate",
     "SubstrateLayer",

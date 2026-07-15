@@ -5,3 +5,7 @@ References:
     encoding for evolving large-scale neural networks. Artificial Life, 15(2),
     185-212.
 """
+
+from polyneat.algorithms.hyperneat.hyperneat_algorithm import HyperNEATAlgorithm
+
+__all__ = ["HyperNEATAlgorithm"]

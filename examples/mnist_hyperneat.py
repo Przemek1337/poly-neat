@@ -32,8 +32,8 @@ import numpy as np
 import torch
 
 import polyneat as pn
-from polyneat.algorithms.neat.neat_algorithm import NEATAlgorithm
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.neat_algorithm import NEATAlgorithm
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
 )
@@ -62,7 +62,7 @@ def build_mnist_hyperneat_algorithm(
 ) -> NEATAlgorithm:
     """Assemble a HyperNEAT algorithm whose decoder uses a 2-D image substrate.
 
-    Starts from the standard ``make_hyperneat_algorithm`` (CPPN genetics + a
+    Starts from the standard ``HyperNEATAlgorithm.from_config`` (CPPN genetics + a
     fully-connected 4-input/1-output CPPN initial population), then swaps in a
     phenotype decoder over a two-sheet sandwich substrate: a ``grid_side x
     grid_side`` input pixel grid and a row of ``number_of_classes`` output nodes.
@@ -70,7 +70,7 @@ def build_mnist_hyperneat_algorithm(
     separate coordinate band, since digit classes have no spatial relationship to
     the pixels and the CPPN needs to tell input positions from output positions.
     """
-    base_algorithm = pn.make_hyperneat_algorithm(config)
+    base_algorithm = pn.HyperNEATAlgorithm.from_config(config)
 
     device = torch.device(config.device_for_phenotype_evaluation)
     substrate = pn.build_grid_sandwich_substrate(

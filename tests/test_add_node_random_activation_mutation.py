@@ -5,8 +5,8 @@ import numpy as np
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
 )
-from polyneat.algorithms.neat.global_innovation_tracker import GlobalInnovationTracker
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.core.neat.global_innovation_tracker import GlobalInnovationTracker
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 
 
 def _minimal_genome_with_one_connection() -> NEATGenome:

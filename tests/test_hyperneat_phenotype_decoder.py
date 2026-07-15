@@ -9,8 +9,8 @@ from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
     scale_cppn_output_to_substrate_weight,
 )
 from polyneat.algorithms.hyperneat.substrate import build_layered_substrate
-from polyneat.algorithms.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
-from polyneat.algorithms.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
+from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 
 
 def _cppn_genome_with_constant_output(output_weight: float) -> NEATGenome:
