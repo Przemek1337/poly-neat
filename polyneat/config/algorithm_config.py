@@ -66,15 +66,28 @@ class AlgorithmConfig:
 
     @classmethod
     def from_dict(cls, raw_config_data: dict[str, Any]) -> AlgorithmConfig:
-        """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos)."""
-        known_field_names = {field.name for field in fields(cls)}
+        """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos).
+
+        Values loaded from YAML for tuple-typed fields arrive as lists; they are
+        coerced back to tuples so a saved config reloads to an equal instance.
+        """
+        dataclass_fields = fields(cls)
+        known_field_names = {field.name for field in dataclass_fields}
         unknown_keys = set(raw_config_data.keys()) - known_field_names
         if unknown_keys:
             raise ConfigurationError(
                 f"Unknown configuration keys: {sorted(unknown_keys)}. "
                 f"Check for typos. Known keys: {sorted(known_field_names)}"
             )
-        return cls(**raw_config_data)
+        coerced_config_data = dict(raw_config_data)
+        for dataclass_field in dataclass_fields:
+            if isinstance(dataclass_field.default, tuple) and isinstance(
+                coerced_config_data.get(dataclass_field.name), list
+            ):
+                coerced_config_data[dataclass_field.name] = tuple(
+                    coerced_config_data[dataclass_field.name]
+                )
+        return cls(**coerced_config_data)
 
     def save_to_yaml_file(self, yaml_file_path: Path) -> None:
         """Dump the config as YAML, loadable back via ``load_from_yaml_file``."""
@@ -83,5 +96,12 @@ class AlgorithmConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the config as a plain dict of field name to value."""
-        return asdict(self)
+        """Return the config as a plain dict, tuple fields rendered as lists.
+
+        Lists keep the saved YAML free of ``!!python/tuple`` tags so it stays
+        ``safe_load``-able; :meth:`from_dict` restores the tuples on load.
+        """
+        return {
+            key: (list(value) if isinstance(value, tuple) else value)
+            for key, value in asdict(self).items()
+        }
