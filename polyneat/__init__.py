@@ -6,8 +6,14 @@ The full NEAT implementation (Stanley & Miikkulainen, 2002) lives in
 the public API.
 """
 
+from polyneat.algorithms.cneat.class_genome_container import ClassGenomeContainer
+from polyneat.algorithms.cneat.cneat_algorithm import CNEATAlgorithm
+from polyneat.algorithms.cneat.container_ensemble_phenotype import ContainerEnsemblePhenotype
+from polyneat.algorithms.cneat.container_progress_logger import ContainerProgressLogger
+from polyneat.algorithms.cneat.container_update_callback import ContainerUpdateCallback
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.config.algorithm_config import AlgorithmConfig
+from polyneat.config.cneat_config import CNEATConfig
 from polyneat.config.configuration_errors import ConfigurationError
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
@@ -155,4 +161,11 @@ __all__ = [
     "AddConnectionMutation",
     "WeightModificationMutation",
     "ToggleConnectionEnabledMutation",
+    # C-NEAT algorithm
+    "CNEATConfig",
+    "CNEATAlgorithm",
+    "ClassGenomeContainer",
+    "ContainerUpdateCallback",
+    "ContainerEnsemblePhenotype",
+    "ContainerProgressLogger",
 ]
