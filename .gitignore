@@ -7,4 +7,5 @@ __pycache__/
 dist/
 *.pyc
 examples/mnist_data/
+examples/iris_data/
 examples/*/tensorboard/
