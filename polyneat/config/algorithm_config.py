@@ -66,7 +66,11 @@ class AlgorithmConfig:
 
     @classmethod
     def from_dict(cls, raw_config_data: dict[str, Any]) -> AlgorithmConfig:
-        """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos)."""
+        """Strict loader: unknown keys raise ``ConfigurationError`` (catches typos).
+
+        Values loaded from YAML for tuple-typed fields arrive as lists; they are
+        coerced back to tuples so a saved config reloads to an equal instance.
+        """
         dataclass_fields = fields(cls)
         known_field_names = {field.name for field in dataclass_fields}
         unknown_keys = set(raw_config_data.keys()) - known_field_names
@@ -92,6 +96,11 @@ class AlgorithmConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the config as a plain dict, tuple fields rendered as lists.
+
+        Lists keep the saved YAML free of ``!!python/tuple`` tags so it stays
+        ``safe_load``-able; :meth:`from_dict` restores the tuples on load.
+        """
         return {
             key: (list(value) if isinstance(value, tuple) else value)
             for key, value in asdict(self).items()
