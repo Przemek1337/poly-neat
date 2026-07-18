@@ -7,8 +7,19 @@ the public API.
 """
 
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
+from polyneat.algorithms.lneat.backpropagation_weight_trainer import (
+    BackpropagationWeightTrainer,
+)
+from polyneat.algorithms.lneat.lneat_algorithm import LNEATAlgorithm
+from polyneat.algorithms.lneat.recognizer_ensemble_phenotype import (
+    RecognizerEnsemblePhenotype,
+)
+from polyneat.algorithms.lneat.trainable_torch_phenotype import (
+    TrainableTorchFeedForwardPhenotype,
+)
 from polyneat.config.algorithm_config import AlgorithmConfig
 from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.config.lneat_config import LNEATConfig
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
@@ -136,6 +147,12 @@ __all__ = [
     # NEAT algorithm
     "NEATAlgorithm",
     "FSNEATAlgorithm",
+    # L-NEAT algorithm
+    "LNEATConfig",
+    "LNEATAlgorithm",
+    "BackpropagationWeightTrainer",
+    "TrainableTorchFeedForwardPhenotype",
+    "RecognizerEnsemblePhenotype",
     "build_fully_connected_initial_population",
     "build_fs_neat_initial_population",
     "register_initial_population_strategy",
