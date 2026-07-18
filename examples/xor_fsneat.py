@@ -6,8 +6,8 @@ signal. FS-NEAT starts every genome with a *single* random input->output
 connection instead of a fully connected layer; evolution has to discover both
 the XOR topology and which inputs are worth connecting at all.
 
-At the end the script reports which input features the best network actually
-uses, so you can see the feature selection working.
+At the end the script reports which input features the best network uses,
+making the feature selection visible.
 
 Run from the repository root:
     uv run python examples/xor_fsneat.py [--cpu | --gpu]

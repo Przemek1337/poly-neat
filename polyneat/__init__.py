@@ -12,9 +12,24 @@ from polyneat.algorithms.cneat.container_ensemble_phenotype import ContainerEnse
 from polyneat.algorithms.cneat.container_progress_logger import ContainerProgressLogger
 from polyneat.algorithms.cneat.container_update_callback import ContainerUpdateCallback
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
+from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
+    AddNodeWithRandomActivationMutation,
+)
+from polyneat.algorithms.hyperneat.hyperneat_algorithm import HyperNEATAlgorithm
+from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
+    HyperNEATPhenotypeDecoder,
+)
+from polyneat.algorithms.hyperneat.substrate import (
+    Substrate,
+    SubstrateLayer,
+    SubstrateNode,
+    build_grid_sandwich_substrate,
+    build_layered_substrate,
+)
 from polyneat.config.algorithm_config import AlgorithmConfig
 from polyneat.config.cneat_config import CNEATConfig
 from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.config.hyperneat_config import HyperNEATConfig
 from polyneat.config.neat_config import NEATConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
@@ -161,6 +176,16 @@ __all__ = [
     "AddConnectionMutation",
     "WeightModificationMutation",
     "ToggleConnectionEnabledMutation",
+    # HyperNEAT algorithm
+    "HyperNEATConfig",
+    "HyperNEATAlgorithm",
+    "HyperNEATPhenotypeDecoder",
+    "Substrate",
+    "SubstrateLayer",
+    "SubstrateNode",
+    "build_layered_substrate",
+    "build_grid_sandwich_substrate",
+    "AddNodeWithRandomActivationMutation",
     # C-NEAT algorithm
     "CNEATConfig",
     "CNEATAlgorithm",
