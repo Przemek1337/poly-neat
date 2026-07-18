@@ -120,13 +120,6 @@ def main() -> None:
     train_indices = shuffled_indices[:train_size]
     test_indices = shuffled_indices[train_size:]
 
-    # One fixed learning subset, drawn once and shared by every class run
-    # (paper, section IV.B.5: "same set of learning samples will be used for
-    # all back propagation"). It is stratified so each class contributes
-    # number_of_learning_samples // number_of_class_labels samples: the paper
-    # fixes the set's identity but not its composition, and an unstratified
-    # draw can leave a class's recognizer with almost no positive examples to
-    # learn its target from.
     learning_indices = _draw_stratified_learning_indices(
         train_indices=train_indices,
         labels=labels,
@@ -154,9 +147,6 @@ def main() -> None:
             classification_threshold=config.classification_threshold,
         )
         backpropagation_trainer = pn.BackpropagationWeightTrainer(
-            # Type 1 is judged on the same data the fitness uses (paper's
-            # fitness surface, Table I / Fig. 2); backpropagation runs on the
-            # A learning samples (section IV.B.5).
             classification_features=train_features,
             classification_binary_targets=(
                 train_labels == class_label_index
