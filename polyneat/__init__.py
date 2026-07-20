@@ -26,11 +26,16 @@ from polyneat.algorithms.hyperneat.substrate import (
     build_grid_sandwich_substrate,
     build_layered_substrate,
 )
+from polyneat.algorithms.neatdbm.difference_based_weight_mutation import (
+    DifferenceBasedWeightMutation,
+)
+from polyneat.algorithms.neatdbm.neatdbm_algorithm import NEATDBMAlgorithm
 from polyneat.config.algorithm_config import AlgorithmConfig
 from polyneat.config.cneat_config import CNEATConfig
 from polyneat.config.configuration_errors import ConfigurationError
 from polyneat.config.hyperneat_config import HyperNEATConfig
 from polyneat.config.neat_config import NEATConfig
+from polyneat.config.neatdbm_config import NEATDBMConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
     FitnessEvaluator,
@@ -193,4 +198,8 @@ __all__ = [
     "ContainerUpdateCallback",
     "ContainerEnsemblePhenotype",
     "ContainerProgressLogger",
+    # NEAT-DBM algorithm
+    "NEATDBMConfig",
+    "NEATDBMAlgorithm",
+    "DifferenceBasedWeightMutation",
 ]
