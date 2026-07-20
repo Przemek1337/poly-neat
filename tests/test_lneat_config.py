@@ -73,15 +73,6 @@ def test_rejects_unbounded_output_activation() -> None:
     with pytest.raises(ConfigurationError):
         LNEATConfig(default_activation_function_for_output_nodes="tanh")
 
-
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing AlgorithmConfig bug: save_to_yaml_file dumps the inherited tuple "
-        "field available_activation_functions as !!python/tuple, which load_from_yaml_file's "
-        "safe_load rejects. Affects NEATConfig identically; to be fixed separately."
-    ),
-    raises=yaml.constructor.ConstructorError,
-)
 def test_yaml_round_trip(tmp_path) -> None:
     config = LNEATConfig(
         number_of_input_nodes=4,
