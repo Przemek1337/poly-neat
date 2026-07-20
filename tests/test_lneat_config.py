@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import pytest
-import yaml
 
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.lneat_config import LNEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.lneat.lneat_config import LNEATConfig
 
 
 def test_defaults_are_valid_and_inherit_neat_fields() -> None:

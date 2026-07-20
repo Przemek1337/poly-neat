@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import torch
 
-from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.configs.configuration_errors import ConfigurationError
 
 ActivationFunction = Callable[[torch.Tensor], torch.Tensor]
 

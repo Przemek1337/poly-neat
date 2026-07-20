@@ -17,7 +17,7 @@ from numpy.random import Generator
 from polyneat.core.type_aliases import FitnessValue, SpeciesId
 
 if TYPE_CHECKING:
-    from polyneat.config.algorithm_config import AlgorithmConfig
+    from polyneat.configs.algorithm_config import AlgorithmConfig
     from polyneat.core.generation_statistics import GenerationStatistics
     from polyneat.core.population import Population
 

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from polyneat.config.algorithm_config import AlgorithmConfig
-from polyneat.config.hyperneat_config import HyperNEATConfig
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.algorithm_config import AlgorithmConfig
+from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
 
 
 @pytest.mark.parametrize(

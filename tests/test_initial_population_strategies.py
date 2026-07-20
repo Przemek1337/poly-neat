@@ -5,8 +5,8 @@ import dataclasses
 import numpy as np
 import pytest
 
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.core.neat.initial_population import (
     INITIAL_POPULATION_STRATEGY_NAME_TO_CALLABLE,
     build_fully_connected_initial_population,

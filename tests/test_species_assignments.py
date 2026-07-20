@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 
 

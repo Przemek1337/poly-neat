@@ -5,7 +5,7 @@ import dataclasses
 import numpy as np
 
 from polyneat.algorithms.fsneat import FSNEATAlgorithm
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.core.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,
 )
