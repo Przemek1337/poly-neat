@@ -1,0 +1,60 @@
+# PolyNEAT – Iris L-NEAT configuration
+# L-NEAT (Chen & Alahakoon, 2006) on the Iris dataset: 4 features, 3 classes.
+# Divide and conquer: one single-output recognizer evolution per class label
+# (section IV.A); every learning_interval_generations the non-Type-1 networks
+# undergo backpropagation on a fixed subset of the training data (section IV.B).
+# Remaining NEAT parameters as in Stanley & Miikkulainen (2002).
+
+population_size: 150
+number_of_input_nodes: 4
+number_of_output_nodes: 1   # one recognizer output per subtask - must be 1
+number_of_class_labels: 3
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+# L-NEAT learning schedule (paper section IV.B; the paper reports no concrete
+# values for I, A, L — these are this example's tuning choices)
+learning_interval_generations: 5      # paper's I
+number_of_learning_samples: 12        # paper's A (small portion of training data)
+backpropagation_iterations_per_session: 10   # paper's L
+backpropagation_learning_rate: 0.1    # not specified by the paper
+training_indicator: 0.2               # Type-1 skip margin (section IV.B.2)
+classification_threshold: 0.5
+
+# Mutation rates (NEAT defaults from Stanley & Miikkulainen 2002)
+probability_of_add_node_mutation: 0.03
+probability_of_add_connection_mutation: 0.05
+probability_of_weight_perturbation: 0.80
+probability_of_weight_replacement: 0.10
+probability_of_toggle_connection_enabled: 0.01
+
+# Weight initialization & perturbation (matches examples/xor_fsneat.yaml)
+initial_weight_range_min: -2.0
+initial_weight_range_max: 2.0
+weight_perturbation_strength_sigma: 0.5
+
+# Speciation (compatibility distance coefficients from the original NEAT paper)
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+# Species lifecycle
+species_elitism_count: 1
+species_stagnation_generations_limit: 15
+minimum_species_size_for_elitism: 5
+
+# Crossover
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
+probability_of_interspecies_mating: 0.001
+
+# Parent selection
+tournament_size_for_parent_selection: 3
+species_survival_fraction_for_reproduction: 0.2
+
+# Activation functions (outputs must stay [0, 1]-bounded so distances to the
+# binary targets and the classification threshold are meaningful;
+# LNEATConfig validates this)
+default_activation_function_for_hidden_nodes: steepened_sigmoid
+default_activation_function_for_output_nodes: steepened_sigmoid
