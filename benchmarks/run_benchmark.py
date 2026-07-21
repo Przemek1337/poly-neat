@@ -8,7 +8,7 @@ Invoke as a module from the repository root (script invocation would put
 Each repeat calls the example's ``run_experiment`` with evolution seed
 ``base_seed + i`` and no artifacts directory. One JSON document per
 invocation lands in ``benchmarks/results/`` recording every run, the
-mean/std summary, and the full yaml config that produced it — after "edit
+mean/std summary, and the full yaml config that produced it - after "edit
 the yaml, re-run, compare" the old yaml is gone, so the result file itself
 must record what produced it.
 """
