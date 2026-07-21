@@ -1,6 +1,6 @@
 # PolyNEAT – XOR NEAT-DBM configuration
 # NEAT with difference-based mutation (Stanovov et al., 2021) on the
-# canonical XOR benchmark. Identical to xor_baseline.yaml except for the
+# canonical XOR benchmark. Identical to examples/xor/neat.yaml except for the
 # two difference-based mutation hyperparameters at the bottom.
 # Success criterion: best_fitness >= 3.95 within 300 generations.
 

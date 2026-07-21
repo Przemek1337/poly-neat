@@ -6,6 +6,6 @@ __pycache__/
 .pytest_cache/
 dist/
 *.pyc
-examples/mnist_data/
-examples/iris_data/
-examples/*/tensorboard/
+examples/*/data/
+examples/*/artifacts/*/tensorboard/
+benchmarks/results/

@@ -1,4 +1,4 @@
-"""Iris L-NEAT — NEAT with backpropagation learning, multi-class demo.
+"""Iris L-NEAT - NEAT with backpropagation learning, multi-class demo.
 
 Demonstrates L-NEAT (Chen & Alahakoon, ICIA 2006, pp. 367-371) on the Iris
 dataset. Divide and conquer: each of the 3 classes gets its own evolution run
@@ -8,27 +8,29 @@ fixed learning subset, and the trained weights are inherited (Lamarckian).
 The best recognizer per class is assembled into an argmax ensemble.
 
 The dataset is downloaded once from the UCI repository and cached under
-examples/iris_data/ (gitignored). Only numpy and torch are required.
+examples/iris/data/. Only numpy and torch are required.
 
 Run from the repository root:
-    uv run python examples/iris_lneat.py [--cpu | --gpu]
+    uv run python -m examples.iris.lneat [--cpu | --gpu]
 
-Artifacts are written to examples/iris_lneat_artifacts/:
-    recognizers.json — best genome and fitness of every class label
-    class_<k>/       — best genome of class k's run, JSON + pickle
-    tensorboard/     — per-class TensorBoard event files
+Artifacts are written to examples/iris/artifacts/lneat/:
+    recognizers.json - best genome and fitness of every class label
+    class_<k>/       - best genome of class k's run, JSON + pickle
+    tensorboard/     - per-class TensorBoard event files
 """
 
 from __future__ import annotations
 
-import urllib.request
 from pathlib import Path
 
 import numpy as np
 import torch
-from _example_cli import parse_device_from_cli
 
 import polyneat as pn
+from examples._datasets import split_indices_into_train_and_test
+from examples._example_cli import parse_device_from_cli
+from examples._experiment import ExperimentReport, print_experiment_report
+from examples.iris.dataset import load_iris_features_and_labels
 from polyneat.evaluators.binary_recognizer_evaluator import (
     BinaryRecognizerFitnessEvaluator,
 )
@@ -37,43 +39,12 @@ from polyneat.evaluators.classification_accuracy_evaluator import (
 )
 from polyneat.utils.artifact_serialization import save_as_json
 
-_THIS_DIR = Path(__file__).parent
-_DATA_DIR = _THIS_DIR / "iris_data"
-_ARTIFACTS_DIR = _THIS_DIR / "iris_lneat_artifacts"
-_IRIS_DATA_URL = (
-    "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"
-)
+CONFIG_FILE_PATH = Path(__file__).parent / "lneat.yaml"
+_ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "lneat"
 
-_CLASS_NAME_TO_INDEX = {"Iris-setosa": 0, "Iris-versicolor": 1, "Iris-virginica": 2}
 _TRAIN_FRACTION = 0.66
 
 _MAX_GENERATION_NUMBER_PER_CLASS = 49
-
-
-def _download_iris_if_missing() -> Path:
-    """Download the UCI iris.data file to the cache dir if absent."""
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    data_path = _DATA_DIR / "iris.data"
-    if not data_path.exists():
-        print(f"Downloading Iris to {data_path} ...")
-        urllib.request.urlretrieve(_IRIS_DATA_URL, data_path)
-    return data_path
-
-
-def load_iris_dataset() -> tuple[np.ndarray, np.ndarray]:
-    """Return (features [150, 4] normalized to [0, 1], class label indices [150])."""
-    data_path = _download_iris_if_missing()
-    rows = [
-        line.strip().split(",")
-        for line in data_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    features = np.array([[float(value) for value in row[:4]] for row in rows], dtype=np.float32)
-    labels = np.array([_CLASS_NAME_TO_INDEX[row[4]] for row in rows], dtype=np.int64)
-    feature_minima = features.min(axis=0)
-    feature_maxima = features.max(axis=0)
-    features = (features - feature_minima) / (feature_maxima - feature_minima)
-    return features, labels
 
 
 def _draw_stratified_learning_indices(
@@ -109,35 +80,55 @@ def _draw_stratified_learning_indices(
     return np.array(sorted(drawn_indices), dtype=np.int64)
 
 
-def main() -> None:
-    device = parse_device_from_cli()
-    config = pn.LNEATConfig.load_from_yaml_file(_THIS_DIR / "iris_lneat.yaml")
-    features, labels = load_iris_dataset()
+def run_experiment(
+    device: torch.device | None = None,
+    random_seed: int | None = None,
+    artifacts_directory: Path | None = None,
+) -> ExperimentReport:
+    """Run the full Iris L-NEAT experiment once (one evolution per class).
 
-    split_rng = np.random.default_rng(config.random_seed)
-    shuffled_indices = split_rng.permutation(len(labels))
-    train_size = int(_TRAIN_FRACTION * len(labels))
-    train_indices = shuffled_indices[:train_size]
-    test_indices = shuffled_indices[train_size:]
+    Args:
+        device: Phenotype evaluation device; ``None`` uses the yaml value.
+        random_seed: Evolution seed override for every per-class run;
+            ``None`` uses the yaml value. The train/test split and the fixed
+            learning subset always use the yaml seed.
+        artifacts_directory: Where to write artifacts; ``None`` writes none.
+
+    Returns:
+        Train and test accuracy of the recognizer ensemble;
+        ``number_of_generations`` and ``runtime_seconds`` are totals across
+        the per-class runs.
+    """
+    config = pn.LNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
+    evolution_seed = config.random_seed if random_seed is None else random_seed
+    features, labels = load_iris_features_and_labels()
+
+    train_indices, test_indices = split_indices_into_train_and_test(
+        number_of_samples=len(labels),
+        train_fraction=_TRAIN_FRACTION,
+        random_seed=config.random_seed,
+    )
 
     learning_indices = _draw_stratified_learning_indices(
         train_indices=train_indices,
-        labels=labels,
+        labels=labels.numpy(),
         number_of_class_labels=config.number_of_class_labels,
         number_of_learning_samples=config.number_of_learning_samples,
-        rng=split_rng,
+        rng=np.random.default_rng(config.random_seed),
     )
 
-    train_features = torch.from_numpy(features[train_indices])
-    train_labels = torch.from_numpy(labels[train_indices])
-    test_features = torch.from_numpy(features[test_indices])
-    test_labels = torch.from_numpy(labels[test_indices])
-    learning_features = torch.from_numpy(features[learning_indices])
-    learning_labels = torch.from_numpy(labels[learning_indices])
+    train_features = features[train_indices]
+    train_labels = labels[train_indices]
+    test_features = features[test_indices]
+    test_labels = labels[test_indices]
+    learning_features = features[learning_indices]
+    learning_labels = labels[learning_indices]
 
     best_recognizer_genomes: list[pn.Genome] = []
     best_recognizer_fitnesses: list[float] = []
     phenotype_decoder = None
+    total_number_of_generations = 0
+    total_runtime_seconds = 0.0
     for class_label_index in range(config.number_of_class_labels):
         print(f"\n=== Evolving recognizer for class {class_label_index} ===")
         fitness_evaluator = BinaryRecognizerFitnessEvaluator(
@@ -167,26 +158,35 @@ def main() -> None:
         algorithm.backpropagation_trainer = backpropagation_trainer
         phenotype_decoder = algorithm.phenotype_decoder
 
+        callbacks: list = [pn.ConsoleStatisticsLogger()]
+        if artifacts_directory is not None:
+            callbacks.append(
+                pn.BestGenomePersister(
+                    output_directory=artifacts_directory / f"class_{class_label_index}"
+                )
+            )
+            callbacks.append(
+                pn.TensorBoardLogger(
+                    log_directory=artifacts_directory
+                    / "tensorboard"
+                    / f"class_{class_label_index}"
+                )
+            )
+
         runner = pn.EvolutionRunner(
             algorithm=algorithm,
             fitness_evaluator=fitness_evaluator,
             termination_criterion=pn.MaxGenerationsTermination(
                 max_generations=_MAX_GENERATION_NUMBER_PER_CLASS
             ),
-            callbacks=[
-                pn.ConsoleStatisticsLogger(),
-                pn.BestGenomePersister(
-                    output_directory=_ARTIFACTS_DIR / f"class_{class_label_index}"
-                ),
-                pn.TensorBoardLogger(
-                    log_directory=_ARTIFACTS_DIR / "tensorboard" / f"class_{class_label_index}"
-                ),
-            ],
-            random_seed=config.random_seed,
+            callbacks=callbacks,
+            random_seed=evolution_seed,
         )
         result = runner.run_evolution()
         best_recognizer_genomes.append(result.best_genome_ever_found)
         best_recognizer_fitnesses.append(result.best_fitness_ever_achieved)
+        total_number_of_generations += len(result.full_generation_history)
+        total_runtime_seconds += result.total_runtime_seconds
         print(
             f"Class {class_label_index}: best fitness "
             f"{result.best_fitness_ever_achieved:.4f} "
@@ -205,23 +205,35 @@ def main() -> None:
         input_features=test_features, target_labels=test_labels
     ).evaluate_single_phenotype(ensemble)
 
-    _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    recognizers_payload = {
-        f"class_{class_label_index}": {
-            "best_fitness": best_recognizer_fitnesses[class_label_index],
-            "genome": best_recognizer_genomes[class_label_index].to_serializable_dict(),
+    if artifacts_directory is not None:
+        artifacts_directory.mkdir(parents=True, exist_ok=True)
+        recognizers_payload = {
+            f"class_{class_label_index}": {
+                "best_fitness": best_recognizer_fitnesses[class_label_index],
+                "genome": best_recognizer_genomes[
+                    class_label_index
+                ].to_serializable_dict(),
+            }
+            for class_label_index in range(config.number_of_class_labels)
         }
-        for class_label_index in range(config.number_of_class_labels)
-    }
-    save_as_json(recognizers_payload, _ARTIFACTS_DIR / "recognizers.json")
+        save_as_json(recognizers_payload, artifacts_directory / "recognizers.json")
 
-    print(f"\nTrain accuracy : {train_accuracy:.3f}")
-    print(f"Test accuracy  : {test_accuracy:.3f}")
     for class_label_index in range(config.number_of_class_labels):
         print(
             f"Class {class_label_index} best recognizer fitness: "
             f"{best_recognizer_fitnesses[class_label_index]:.4f}"
         )
+    return ExperimentReport(
+        metric_values={"train_accuracy": train_accuracy, "test_accuracy": test_accuracy},
+        number_of_generations=total_number_of_generations,
+        runtime_seconds=total_runtime_seconds,
+    )
+
+
+def main() -> None:
+    device = parse_device_from_cli()
+    report = run_experiment(device=device, artifacts_directory=_ARTIFACTS_DIR)
+    print_experiment_report(report)
 
 
 if __name__ == "__main__":

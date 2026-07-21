@@ -28,7 +28,7 @@ probability_of_weight_perturbation: 0.80
 probability_of_weight_replacement: 0.10
 probability_of_toggle_connection_enabled: 0.01
 
-# Weight initialization & perturbation (matches examples/xor_fsneat.yaml)
+# Weight initialization & perturbation (matches examples/xor/fsneat.yaml)
 initial_weight_range_min: -2.0
 initial_weight_range_max: 2.0
 weight_perturbation_strength_sigma: 0.5

@@ -39,6 +39,16 @@
       "node_id": 7,
       "node_type": "hidden",
       "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 8,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 9,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
     }
   ],
   "connection_genes": [
@@ -46,84 +56,112 @@
       "innovation_id": 0,
       "source_node_id": 0,
       "target_node_id": 5,
-      "weight": -1.8821904813019241,
+      "weight": -1.8375275135040283,
       "is_enabled": true
     },
     {
       "innovation_id": 1,
       "source_node_id": 1,
       "target_node_id": 5,
-      "weight": 4.327815578847359,
+      "weight": -0.6556686855546596,
       "is_enabled": true
     },
     {
       "innovation_id": 2,
       "source_node_id": 2,
       "target_node_id": 5,
-      "weight": -4.312246803462889,
+      "weight": 5.480877851424064,
       "is_enabled": true
     },
     {
       "innovation_id": 3,
       "source_node_id": 3,
       "target_node_id": 5,
-      "weight": -10.330757224693018,
+      "weight": 3.7252865322471274,
       "is_enabled": true
     },
     {
       "innovation_id": 4,
       "source_node_id": 4,
       "target_node_id": 5,
-      "weight": -0.21974343780880423,
+      "weight": -2.015114558112485,
       "is_enabled": true
     },
     {
-      "innovation_id": 23,
-      "source_node_id": 3,
-      "target_node_id": 6,
-      "weight": -2.793006109742635,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 21,
-      "source_node_id": 6,
-      "target_node_id": 5,
-      "weight": 3.450004915371535,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 27,
-      "source_node_id": 0,
-      "target_node_id": 6,
-      "weight": 0.5843453232559702,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 94,
-      "source_node_id": 2,
-      "target_node_id": 6,
-      "weight": -4.111050569285821,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 95,
-      "source_node_id": 6,
-      "target_node_id": 7,
-      "weight": -1.852578289112821,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 96,
-      "source_node_id": 7,
-      "target_node_id": 5,
-      "weight": -4.540688969661586,
-      "is_enabled": true
-    },
-    {
-      "innovation_id": 128,
+      "innovation_id": 41,
       "source_node_id": 1,
       "target_node_id": 6,
-      "weight": 2.94999054572821,
+      "weight": -0.7854891039592105,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 42,
+      "source_node_id": 6,
+      "target_node_id": 5,
+      "weight": -3.909710353063223,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 50,
+      "source_node_id": 0,
+      "target_node_id": 6,
+      "weight": 0.029111524210813616,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 66,
+      "source_node_id": 1,
+      "target_node_id": 7,
+      "weight": 1.0234140112382697,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 67,
+      "source_node_id": 7,
+      "target_node_id": 6,
+      "weight": 1.4682750785171104,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 98,
+      "source_node_id": 1,
+      "target_node_id": 8,
+      "weight": 0.09085727483034134,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 99,
+      "source_node_id": 8,
+      "target_node_id": 6,
+      "weight": -0.10092351442398106,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 106,
+      "source_node_id": 2,
+      "target_node_id": 7,
+      "weight": -1.1370671278579891,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 317,
+      "source_node_id": 4,
+      "target_node_id": 7,
+      "weight": 0.3599467924771741,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 318,
+      "source_node_id": 8,
+      "target_node_id": 9,
+      "weight": -0.1511586301850989,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 319,
+      "source_node_id": 9,
+      "target_node_id": 6,
+      "weight": -0.4092583519735987,
       "is_enabled": true
     }
   ]
