@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from polyneat.config.algorithm_config import AlgorithmConfig
-from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.configs.algorithm_config import AlgorithmConfig
+from polyneat.configs.configuration_errors import ConfigurationError
 
 
 @dataclass
@@ -14,7 +14,7 @@ class NEATConfig(AlgorithmConfig):
     (2002), section 4.1, wherever the paper specifies a value (mutation
     rates, compatibility coefficients c1/c2/c3 and threshold, interspecies
     mating rate, crossover fraction, stagnation limit). ``validate`` raises
-    :class:`~polyneat.config.configuration_errors.ConfigurationError` on any
+    :class:`~polyneat.configs.configuration_errors.ConfigurationError` on any
     out-of-range value.
     """
 

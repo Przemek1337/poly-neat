@@ -12,16 +12,6 @@ from polyneat.algorithms.cneat.container_ensemble_phenotype import ContainerEnse
 from polyneat.algorithms.cneat.container_progress_logger import ContainerProgressLogger
 from polyneat.algorithms.cneat.container_update_callback import ContainerUpdateCallback
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
-from polyneat.algorithms.lneat.backpropagation_weight_trainer import (
-    BackpropagationWeightTrainer,
-)
-from polyneat.algorithms.lneat.lneat_algorithm import LNEATAlgorithm
-from polyneat.algorithms.lneat.recognizer_ensemble_phenotype import (
-    RecognizerEnsemblePhenotype,
-)
-from polyneat.algorithms.lneat.trainable_torch_phenotype import (
-    TrainableTorchFeedForwardPhenotype,
-)
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
 )
@@ -36,17 +26,27 @@ from polyneat.algorithms.hyperneat.substrate import (
     build_grid_sandwich_substrate,
     build_layered_substrate,
 )
+from polyneat.algorithms.lneat.backpropagation_weight_trainer import (
+    BackpropagationWeightTrainer,
+)
+from polyneat.algorithms.lneat.lneat_algorithm import LNEATAlgorithm
+from polyneat.algorithms.lneat.recognizer_ensemble_phenotype import (
+    RecognizerEnsemblePhenotype,
+)
+from polyneat.algorithms.lneat.trainable_torch_phenotype import (
+    TrainableTorchFeedForwardPhenotype,
+)
 from polyneat.algorithms.neatdbm.difference_based_weight_mutation import (
     DifferenceBasedWeightMutation,
 )
 from polyneat.algorithms.neatdbm.neatdbm_algorithm import NEATDBMAlgorithm
-from polyneat.config.algorithm_config import AlgorithmConfig
-from polyneat.config.cneat_config import CNEATConfig
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.lneat_config import LNEATConfig
-from polyneat.config.hyperneat_config import HyperNEATConfig
-from polyneat.config.neat_config import NEATConfig
-from polyneat.config.neatdbm_config import NEATDBMConfig
+from polyneat.configs.algorithm_config import AlgorithmConfig
+from polyneat.configs.cneat.cneat_config import CNEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
+from polyneat.configs.lneat.lneat_config import LNEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
+from polyneat.configs.neatdbm.neatdbm_config import NEATDBMConfig
 from polyneat.core.component_protocols import (
     CrossoverOperator,
     FitnessEvaluator,

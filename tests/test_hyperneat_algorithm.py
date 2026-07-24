@@ -10,7 +10,7 @@ from polyneat.algorithms.hyperneat.hyperneat_algorithm import HyperNEATAlgorithm
 from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
     HyperNEATPhenotypeDecoder,
 )
-from polyneat.config.hyperneat_config import HyperNEATConfig
+from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
 from polyneat.core.neat.mutations.composite_neat_mutation import (
     CompositeNEATMutation,
 )

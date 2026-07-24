@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.configs.configuration_errors import ConfigurationError
 from polyneat.core.type_aliases import InnovationId
 
 NodeType = Literal["input", "hidden", "output", "bias"]

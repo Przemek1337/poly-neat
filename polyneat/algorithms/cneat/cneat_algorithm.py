@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from polyneat.config.cneat_config import CNEATConfig
+from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 
 
@@ -28,7 +28,7 @@ class CNEATAlgorithm(NEATAlgorithm):
       builds the final argmax classifier.
 
     The subclass carries the
-    :class:`~polyneat.config.cneat_config.CNEATConfig` whose
+    :class:`~polyneat.configs.cneat.cneat_config.CNEATConfig` whose
     ``number_of_class_labels`` the evaluator and container share.
 
     References:

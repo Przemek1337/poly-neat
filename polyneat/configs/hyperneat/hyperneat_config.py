@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.neat.neat_config import NEATConfig
 
 # The CPPN has exactly these many coordinate inputs (x1, y1, x2, y2) and one
 # output (the queried connection weight). 2-D substrate coordinates -> 4 inputs.

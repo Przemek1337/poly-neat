@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.neat.neat_config import NEATConfig
 
 _OUTPUT_ACTIVATIONS_BOUNDED_IN_UNIT_INTERVAL: tuple[str, ...] = (
     "sigmoid",

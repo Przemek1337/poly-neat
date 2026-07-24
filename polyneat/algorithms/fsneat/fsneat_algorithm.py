@@ -20,7 +20,7 @@ class FSNEATAlgorithm(NEATAlgorithm):
     worth wiring in at all, performing feature selection as a side effect of
     the topology search.
 
-    Everything else — configuration (:class:`~polyneat.config.neat_config.NEATConfig`),
+    Everything else — configuration (:class:`~polyneat.configs.neat.neat_config.NEATConfig`),
     operators, speciation, and the generational loop — is inherited unchanged
     from :class:`~polyneat.core.neat.neat_algorithm.NEATAlgorithm`.
 

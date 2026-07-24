@@ -8,7 +8,7 @@ from polyneat.algorithms.lneat.backpropagation_weight_trainer import (
     BackpropagationWeightTrainer,
 )
 from polyneat.algorithms.lneat.lneat_algorithm import LNEATAlgorithm
-from polyneat.config.lneat_config import LNEATConfig
+from polyneat.configs.lneat.lneat_config import LNEATConfig
 from polyneat.core.generation_statistics import GenerationStatistics
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.population import Population
