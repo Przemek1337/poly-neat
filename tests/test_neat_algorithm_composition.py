@@ -5,7 +5,7 @@ import dataclasses
 import numpy as np
 from numpy.random import Generator
 
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.core.component_protocols import InnovationTracker
 from polyneat.core.neat.compatibility_distance_speciator import (
     CompatibilityDistanceSpeciator,

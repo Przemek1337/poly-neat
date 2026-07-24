@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from polyneat.config.configuration_errors import ConfigurationError
-from polyneat.config.hyperneat_config import HyperNEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
 
 
 def test_defaults_are_valid_and_describe_a_cppn():

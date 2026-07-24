@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from polyneat.algorithms.cneat.cneat_algorithm import CNEATAlgorithm
-from polyneat.config.cneat_config import CNEATConfig
+from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.core.component_protocols import NeuroevolutionAlgorithm
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.evaluators.class_indexed_evaluator_base import ClassIndexedFitnessEvaluator

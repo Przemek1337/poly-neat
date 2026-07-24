@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from polyneat.config.cneat_config import CNEATConfig
-from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.configs.cneat.cneat_config import CNEATConfig
+from polyneat.configs.configuration_errors import ConfigurationError
 
 
 def test_defaults_are_valid_and_inherit_neat_fields() -> None:

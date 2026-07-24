@@ -7,7 +7,7 @@ from numpy.random import Generator
 from polyneat.algorithms.neatdbm.difference_based_weight_mutation import (
     DifferenceBasedWeightMutation,
 )
-from polyneat.config.neatdbm_config import NEATDBMConfig
+from polyneat.configs.neatdbm.neatdbm_config import NEATDBMConfig
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.core.type_aliases import FitnessValue

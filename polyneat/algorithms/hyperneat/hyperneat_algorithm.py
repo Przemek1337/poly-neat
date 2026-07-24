@@ -8,7 +8,7 @@ substrate ANN). The generational loop, crossover, speciation, parent selection,
 innovation tracking, and the fully-connected initial population (a minimal
 4-input + bias -> 1-output net is exactly a minimal CPPN) are inherited
 unchanged. Requires a
-:class:`~polyneat.config.hyperneat_config.HyperNEATConfig`.
+:class:`~polyneat.configs.hyperneat.hyperneat_config.HyperNEATConfig`.
 
 References:
     Stanley, K. O., D'Ambrosio, D. B., & Gauci, J. (2009). A hypercube-based
@@ -30,8 +30,8 @@ from polyneat.algorithms.hyperneat.hyperneat_phenotype_decoder import (
     HyperNEATPhenotypeDecoder,
 )
 from polyneat.algorithms.hyperneat.substrate import build_layered_substrate
-from polyneat.config.hyperneat_config import HyperNEATConfig
-from polyneat.config.neat_config import NEATConfig
+from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
+from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.core.component_protocols import MutationOperator, PhenotypeDecoder
 from polyneat.core.neat.mutations.add_connection_mutation import AddConnectionMutation
 from polyneat.core.neat.mutations.composite_neat_mutation import CompositeNEATMutation
@@ -54,7 +54,7 @@ class HyperNEATAlgorithm(NEATAlgorithm):
     generational loop and every other component are inherited from
     :class:`~polyneat.core.neat.neat_algorithm.NEATAlgorithm`. Build it with the
     inherited ``HyperNEATAlgorithm.from_config(hyperneat_config)`` and give it a
-    :class:`~polyneat.config.hyperneat_config.HyperNEATConfig`.
+    :class:`~polyneat.configs.hyperneat.hyperneat_config.HyperNEATConfig`.
     """
 
     @classmethod

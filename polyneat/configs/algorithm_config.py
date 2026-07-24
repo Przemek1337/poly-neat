@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from polyneat.config.configuration_errors import ConfigurationError
+from polyneat.configs.configuration_errors import ConfigurationError
 
 
 @dataclass
