@@ -26,11 +26,13 @@ import torch
 import polyneat as pn
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
+from examples.visual_discrimination.dataset import (
+    load_visual_discrimination_trials,
+)
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.evaluators.visual_discrimination_evaluator import (
     VisualDiscriminationFitnessEvaluator,
-    generate_visual_discrimination_trials,
 )
 
 CONFIG_FILE_PATH = Path(__file__).parent / "hyperneat.yaml"
@@ -103,7 +105,7 @@ def run_experiment(
     """
     config = pn.HyperNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
 
-    trial_fields, true_rows, true_cols = generate_visual_discrimination_trials(
+    trials = load_visual_discrimination_trials(
         field_side=FIELD_SIDE,
         big_object_side=BIG_OBJECT_SIDE,
         small_object_side=SMALL_OBJECT_SIDE,
@@ -121,7 +123,10 @@ def run_experiment(
         config, field_side=FIELD_SIDE, device_for_phenotype_computation=device
     )
     evaluator = VisualDiscriminationFitnessEvaluator(
-        trial_fields, true_rows, true_cols, field_side=FIELD_SIDE
+        trials.trial_fields,
+        trials.true_center_rows,
+        trials.true_center_cols,
+        field_side=FIELD_SIDE,
     )
 
     callbacks: list = [pn.ConsoleStatisticsLogger()]

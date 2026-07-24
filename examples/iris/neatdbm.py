@@ -33,10 +33,9 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._datasets import split_indices_into_train_and_test
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
-from examples.iris.dataset import load_iris_features_and_labels
+from examples.iris.dataset import load_iris
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
 )
@@ -70,12 +69,8 @@ def run_experiment(
         Train and test accuracy of the best evolved network.
     """
     config = pn.NEATDBMConfig.load_from_yaml_file(CONFIG_FILE_PATH)
-    features, labels = load_iris_features_and_labels()
-
-    train_indices, test_indices = split_indices_into_train_and_test(
-        number_of_samples=len(labels),
-        train_fraction=_TRAIN_FRACTION,
-        random_seed=config.random_seed,
+    dataset = load_iris(
+        train_fraction=_TRAIN_FRACTION, random_seed=config.random_seed
     )
 
     algorithm = pn.NEATDBMAlgorithm.from_config(
@@ -83,8 +78,8 @@ def run_experiment(
     )
 
     training_evaluator = SoftmaxLikelihoodFitnessEvaluator(
-        input_features=features[train_indices],
-        target_labels=labels[train_indices],
+        input_features=dataset.train_features,
+        target_labels=dataset.train_labels,
     )
 
     callbacks: list = [pn.ConsoleStatisticsLogger()]
@@ -107,10 +102,10 @@ def run_experiment(
         result.best_genome_ever_found
     )
     train_accuracy = ClassificationAccuracyEvaluator(
-        input_features=features[train_indices], target_labels=labels[train_indices]
+        input_features=dataset.train_features, target_labels=dataset.train_labels
     ).evaluate_single_phenotype(best_phenotype)
     test_accuracy = ClassificationAccuracyEvaluator(
-        input_features=features[test_indices], target_labels=labels[test_indices]
+        input_features=dataset.test_features, target_labels=dataset.test_labels
     ).evaluate_single_phenotype(best_phenotype)
 
     print(f"\nTermination : {result.termination_reason}")

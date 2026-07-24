@@ -30,7 +30,7 @@ import torch
 import polyneat as pn
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
-from examples.mnist.dataset import load_pooled_mnist_train_and_test
+from examples.mnist.dataset import load_mnist
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
 )
@@ -42,7 +42,6 @@ CONFIG_FILE_PATH = Path(__file__).parent / "neat.yaml"
 _ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "neat"
 
 GRID = 7
-NUMBER_OF_CLASSES = 10
 
 TRAINING_SUBSET_SIZE = 3000
 TEST_SUBSET_SIZE = 2000
@@ -76,28 +75,27 @@ def run_experiment(
     Returns:
         Train and test accuracy of the best evolved network.
     """
-    mnist_subsets = load_pooled_mnist_train_and_test(
-        pooled_grid_side=GRID,
-        training_subset_size=TRAINING_SUBSET_SIZE,
-        test_subset_size=TEST_SUBSET_SIZE,
+    dataset = load_mnist(
         random_seed=_SUBSET_SAMPLING_SEED,
+        grid_side=GRID,
+        max_train_samples=TRAINING_SUBSET_SIZE,
+        max_test_samples=TEST_SUBSET_SIZE,
     )
-    number_of_input_features = mnist_subsets.train_features.shape[1]
     print(
-        f"MNIST loaded: {mnist_subsets.train_features.shape[0]} train / "
-        f"{mnist_subsets.test_features.shape[0]} test "
-        f"samples, {number_of_input_features} inputs ({GRID}x{GRID}), "
-        f"{NUMBER_OF_CLASSES} classes."
+        f"MNIST loaded: {dataset.train_features.shape[0]} train / "
+        f"{dataset.test_features.shape[0]} test "
+        f"samples, {dataset.number_of_features} inputs ({GRID}x{GRID}), "
+        f"{dataset.number_of_classes} classes."
     )
 
     config = pn.NEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
-    config.number_of_input_nodes = number_of_input_features
-    config.number_of_output_nodes = NUMBER_OF_CLASSES
+    config.number_of_input_nodes = dataset.number_of_features
+    config.number_of_output_nodes = dataset.number_of_classes
 
     algorithm = pn.NEATAlgorithm.from_config(config, device_for_phenotype_computation=device)
 
     training_evaluator = _build_parallel_softmax_evaluator(
-        mnist_subsets.train_features, mnist_subsets.train_labels
+        dataset.train_features, dataset.train_labels
     )
 
     callbacks: list = [pn.ConsoleStatisticsLogger()]
@@ -124,10 +122,10 @@ def run_experiment(
         result.best_genome_ever_found
     )
     train_accuracy = ClassificationAccuracyEvaluator(
-        mnist_subsets.train_features, mnist_subsets.train_labels
+        dataset.train_features, dataset.train_labels
     ).evaluate_single_phenotype(best_phenotype)
     test_accuracy = ClassificationAccuracyEvaluator(
-        mnist_subsets.test_features, mnist_subsets.test_labels
+        dataset.test_features, dataset.test_labels
     ).evaluate_single_phenotype(best_phenotype)
 
     print(f"\nTermination        : {result.termination_reason}")

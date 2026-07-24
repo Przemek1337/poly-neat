@@ -5,14 +5,12 @@ import pytest
 import torch
 
 from examples._datasets import (
+    ClassificationDataset,
     download_file_if_missing,
+    split_features_and_labels,
     split_indices_into_train_and_test,
 )
-from examples.mnist.dataset import (
-    _average_pool_images_to_grid,
-    _sample_subset,
-    _standardize_features,
-)
+from examples.mnist.dataset import pool_features_to_grid
 
 
 def test_split_returns_disjoint_indices_covering_every_sample() -> None:
@@ -86,66 +84,83 @@ def test_download_creates_parent_directories_and_fetches_when_absent(
     assert recorded_calls == [("https://example.invalid/payload", destination_path)]
 
 
+def _labelled_features(
+    number_of_samples: int, number_of_features: int, number_of_classes: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    rng = np.random.default_rng(0)
+    features = rng.standard_normal(
+        (number_of_samples, number_of_features), dtype=np.float32
+    )
+    labels = np.arange(number_of_samples, dtype=np.int64) % number_of_classes
+    return torch.from_numpy(features), torch.from_numpy(labels)
+
+
+def test_split_features_and_labels_returns_a_classification_dataset() -> None:
+    features, labels = _labelled_features(150, 4, 3)
+
+    dataset = split_features_and_labels(
+        features, labels, train_fraction=0.66, random_seed=42
+    )
+
+    assert isinstance(dataset, ClassificationDataset)
+    assert dataset.number_of_features == 4
+    assert dataset.number_of_classes == 3  # inferred from labels
+    assert dataset.train_features.shape[0] == int(0.66 * 150)
+    assert dataset.test_features.shape[0] == 150 - int(0.66 * 150)
+    assert dataset.train_features.dtype == torch.float32
+    assert dataset.train_labels.dtype == torch.long
+
+
+def test_split_features_and_labels_caps_each_split_at_the_requested_size() -> None:
+    features, labels = _labelled_features(200, 3, 4)
+
+    dataset = split_features_and_labels(
+        features,
+        labels,
+        train_fraction=0.8,
+        random_seed=1,
+        max_train_samples=50,
+        max_test_samples=20,
+    )
+
+    assert dataset.train_features.shape == (50, 3)
+    assert dataset.test_features.shape == (20, 3)
+    assert dataset.train_labels.shape == (50,)
+
+
+def test_split_features_and_labels_honours_explicit_class_count() -> None:
+    features, labels = _labelled_features(40, 2, 2)
+
+    dataset = split_features_and_labels(
+        features, labels, train_fraction=0.5, random_seed=0, number_of_classes=5
+    )
+
+    assert dataset.number_of_classes == 5
+
+
 def test_average_pool_flattens_images_to_the_requested_grid() -> None:
     images = np.full((5, 28, 28), 255, dtype=np.uint8)
 
-    pooled = _average_pool_images_to_grid(images, pooled_grid_side=7)
+    pooled = pool_features_to_grid(images, grid_side=7)
 
     assert pooled.shape == (5, 49)
     assert pooled.dtype == np.float32
-    # A saturated image scales to 1.0 in every pooled cell.
     assert np.allclose(pooled, 1.0)
 
 
 def test_average_pool_preserves_row_major_pixel_order() -> None:
-    # A single bright 4x4 block in the top-left corner must land in pooled cell 0.
     images = np.zeros((1, 28, 28), dtype=np.uint8)
     images[0, 0:4, 0:4] = 255
 
-    pooled = _average_pool_images_to_grid(images, pooled_grid_side=7)
+    pooled = pool_features_to_grid(images, grid_side=7)
 
     assert pooled[0, 0] == pytest.approx(1.0)
     assert np.allclose(pooled[0, 1:], 0.0)
 
 
-def test_standardize_uses_training_statistics_for_both_splits() -> None:
-    rng = np.random.default_rng(0)
-    train_features = rng.normal(loc=5.0, scale=3.0, size=(200, 4)).astype(np.float32)
-    test_features = rng.normal(loc=5.0, scale=3.0, size=(50, 4)).astype(np.float32)
+def test_full_resolution_grid_keeps_every_pixel() -> None:
+    images = np.zeros((3, 28, 28), dtype=np.uint8)
 
-    standardized_train, standardized_test = _standardize_features(
-        train_features, test_features
-    )
+    pooled = pool_features_to_grid(images, grid_side=28)
 
-    assert np.allclose(standardized_train.mean(axis=0), 0.0, atol=1e-5)
-    assert np.allclose(standardized_train.std(axis=0), 1.0, atol=1e-3)
-    # Test features are scaled with the training statistics, so they are only
-    # approximately centred - never exactly.
-    assert standardized_test.shape == test_features.shape
-
-
-def test_sample_subset_returns_torch_tensors_of_the_requested_size() -> None:
-    features = np.arange(100 * 3, dtype=np.float32).reshape(100, 3)
-    labels = np.arange(100, dtype=np.int64) % 4
-
-    subset_features, subset_labels = _sample_subset(
-        features, labels, subset_size=25, rng=np.random.default_rng(3)
-    )
-
-    assert isinstance(subset_features, torch.Tensor)
-    assert subset_features.shape == (25, 3)
-    assert subset_features.dtype == torch.float32
-    assert subset_labels.shape == (25,)
-    assert subset_labels.dtype == torch.long
-
-
-def test_sample_subset_caps_at_the_available_sample_count() -> None:
-    features = np.zeros((10, 2), dtype=np.float32)
-    labels = np.zeros(10, dtype=np.int64)
-
-    subset_features, subset_labels = _sample_subset(
-        features, labels, subset_size=999, rng=np.random.default_rng(3)
-    )
-
-    assert subset_features.shape == (10, 2)
-    assert subset_labels.shape == (10,)
+    assert pooled.shape == (3, 784)

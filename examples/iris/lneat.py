@@ -27,10 +27,9 @@ import numpy as np
 import torch
 
 import polyneat as pn
-from examples._datasets import split_indices_into_train_and_test
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
-from examples.iris.dataset import load_iris_features_and_labels
+from examples.iris.dataset import load_iris
 from polyneat.evaluators.binary_recognizer_evaluator import (
     BinaryRecognizerFitnessEvaluator,
 )
@@ -47,37 +46,40 @@ _TRAIN_FRACTION = 0.66
 _MAX_GENERATION_NUMBER_PER_CLASS = 49
 
 
-def _draw_stratified_learning_indices(
-    train_indices: np.ndarray,
-    labels: np.ndarray,
+def _draw_stratified_learning_positions(
+    train_labels: torch.Tensor,
     number_of_class_labels: int,
     number_of_learning_samples: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
     """Draw the fixed learning subset with every class equally represented.
 
+    Positions index into the training split (``train_features`` /
+    ``train_labels``), not the full dataset, so the caller draws the learning
+    subset straight from the split bundle.
+
     Args:
-        train_indices: Indices of the training split to draw from.
-        labels: Class label index of every sample in the dataset.
+        train_labels: Class label index of every sample in the training split.
         number_of_class_labels: Number of classes to spread the draw across.
         number_of_learning_samples: Total subset size (the paper's ``A``).
         rng: Source of randomness for the draw.
 
     Returns:
-        Indices of the learning subset, holding
+        Positions into the training split, holding
         ``number_of_learning_samples // number_of_class_labels`` samples of
         each class plus a remainder drawn from the classes in order.
     """
+    train_labels_array = train_labels.numpy()
     samples_per_class = number_of_learning_samples // number_of_class_labels
     remainder = number_of_learning_samples - samples_per_class * number_of_class_labels
-    drawn_indices: list[int] = []
+    drawn_positions: list[int] = []
     for class_label_index in range(number_of_class_labels):
-        candidate_indices = train_indices[labels[train_indices] == class_label_index]
+        candidate_positions = np.flatnonzero(train_labels_array == class_label_index)
         draw_size = samples_per_class + (1 if class_label_index < remainder else 0)
-        drawn_indices.extend(
-            rng.choice(candidate_indices, size=draw_size, replace=False).tolist()
+        drawn_positions.extend(
+            rng.choice(candidate_positions, size=draw_size, replace=False).tolist()
         )
-    return np.array(sorted(drawn_indices), dtype=np.int64)
+    return np.array(sorted(drawn_positions), dtype=np.int64)
 
 
 def run_experiment(
@@ -101,28 +103,23 @@ def run_experiment(
     """
     config = pn.LNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
     evolution_seed = config.random_seed if random_seed is None else random_seed
-    features, labels = load_iris_features_and_labels()
-
-    train_indices, test_indices = split_indices_into_train_and_test(
-        number_of_samples=len(labels),
-        train_fraction=_TRAIN_FRACTION,
-        random_seed=config.random_seed,
+    dataset = load_iris(
+        train_fraction=_TRAIN_FRACTION, random_seed=config.random_seed
     )
 
-    learning_indices = _draw_stratified_learning_indices(
-        train_indices=train_indices,
-        labels=labels.numpy(),
+    train_features = dataset.train_features
+    train_labels = dataset.train_labels
+    test_features = dataset.test_features
+    test_labels = dataset.test_labels
+
+    learning_positions = _draw_stratified_learning_positions(
+        train_labels=train_labels,
         number_of_class_labels=config.number_of_class_labels,
         number_of_learning_samples=config.number_of_learning_samples,
         rng=np.random.default_rng(config.random_seed),
     )
-
-    train_features = features[train_indices]
-    train_labels = labels[train_indices]
-    test_features = features[test_indices]
-    test_labels = labels[test_indices]
-    learning_features = features[learning_indices]
-    learning_labels = labels[learning_indices]
+    learning_features = train_features[learning_positions]
+    learning_labels = train_labels[learning_positions]
 
     best_recognizer_genomes: list[pn.Genome] = []
     best_recognizer_fitnesses: list[float] = []

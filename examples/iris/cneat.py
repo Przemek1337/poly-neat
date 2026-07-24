@@ -26,10 +26,9 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._datasets import split_indices_into_train_and_test
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
-from examples.iris.dataset import load_iris_features_and_labels
+from examples.iris.dataset import load_iris
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
 )
@@ -63,20 +62,16 @@ def run_experiment(
         Train and test accuracy of the final container ensemble.
     """
     config = pn.CNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
-    features, labels = load_iris_features_and_labels()
-
-    train_indices, test_indices = split_indices_into_train_and_test(
-        number_of_samples=len(labels),
-        train_fraction=_TRAIN_FRACTION,
-        random_seed=config.random_seed,
+    dataset = load_iris(
+        train_fraction=_TRAIN_FRACTION, random_seed=config.random_seed
     )
 
     container = pn.ClassGenomeContainer(
         number_of_class_labels=config.number_of_class_labels
     )
     fitness_evaluator = MulticlassDatasetFitnessEvaluator(
-        input_features=features[train_indices],
-        class_label_indices=labels[train_indices],
+        input_features=dataset.train_features,
+        class_label_indices=dataset.train_labels,
         number_of_class_labels=config.number_of_class_labels,
     )
     algorithm = pn.CNEATAlgorithm.from_config(config, device_for_phenotype_computation=device)
@@ -103,10 +98,10 @@ def run_experiment(
         container, algorithm.phenotype_decoder
     )
     train_accuracy = ClassificationAccuracyEvaluator(
-        input_features=features[train_indices], target_labels=labels[train_indices]
+        input_features=dataset.train_features, target_labels=dataset.train_labels
     ).evaluate_single_phenotype(ensemble)
     test_accuracy = ClassificationAccuracyEvaluator(
-        input_features=features[test_indices], target_labels=labels[test_indices]
+        input_features=dataset.test_features, target_labels=dataset.test_labels
     ).evaluate_single_phenotype(ensemble)
 
     if artifacts_directory is not None:

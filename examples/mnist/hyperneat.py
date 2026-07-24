@@ -32,7 +32,7 @@ import torch
 import polyneat as pn
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
-from examples.mnist.dataset import load_pooled_mnist_train_and_test
+from examples.mnist.dataset import load_mnist
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.evaluators.classification_accuracy_evaluator import (
@@ -115,15 +115,15 @@ def run_experiment(
     Returns:
         Train and test accuracy of the best evolved network.
     """
-    mnist_subsets = load_pooled_mnist_train_and_test(
-        pooled_grid_side=GRID,
-        training_subset_size=TRAINING_SUBSET_SIZE,
-        test_subset_size=TEST_SUBSET_SIZE,
+    dataset = load_mnist(
         random_seed=_SUBSET_SAMPLING_SEED,
+        grid_side=GRID,
+        max_train_samples=TRAINING_SUBSET_SIZE,
+        max_test_samples=TEST_SUBSET_SIZE,
     )
     print(
-        f"MNIST loaded: {mnist_subsets.train_features.shape[0]} train / "
-        f"{mnist_subsets.test_features.shape[0]} test "
+        f"MNIST loaded: {dataset.train_features.shape[0]} train / "
+        f"{dataset.test_features.shape[0]} test "
         f"samples, {GRID}x{GRID} input grid, {NUMBER_OF_CLASSES} classes."
     )
 
@@ -138,7 +138,7 @@ def run_experiment(
 
     training_evaluator = pn.ParallelFitnessEvaluatorWrapper(
         wrapped_evaluator=SoftmaxLikelihoodFitnessEvaluator(
-            mnist_subsets.train_features, mnist_subsets.train_labels
+            dataset.train_features, dataset.train_labels
         )
     )
 
@@ -165,10 +165,10 @@ def run_experiment(
         result.best_genome_ever_found
     )
     train_accuracy = ClassificationAccuracyEvaluator(
-        mnist_subsets.train_features, mnist_subsets.train_labels
+        dataset.train_features, dataset.train_labels
     ).evaluate_single_phenotype(best_phenotype)
     test_accuracy = ClassificationAccuracyEvaluator(
-        mnist_subsets.test_features, mnist_subsets.test_labels
+        dataset.test_features, dataset.test_labels
     ).evaluate_single_phenotype(best_phenotype)
 
     print(f"\nTermination            : {result.termination_reason}")

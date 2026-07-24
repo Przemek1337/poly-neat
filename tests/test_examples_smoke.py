@@ -25,8 +25,8 @@ import pytest
 import torch
 
 import polyneat as pn
+from examples._datasets import ClassificationDataset, split_features_and_labels
 from examples._experiment import EXAMPLE_REGISTRY
-from examples.mnist.dataset import MnistSubsets
 from polyneat.config.algorithm_config import AlgorithmConfig
 
 _SMOKE_POPULATION_SIZE = 8
@@ -41,45 +41,54 @@ _MNIST_SMOKE_TEST_SIZE = 32
 _MNIST_CLASS_COUNT = 10
 
 
-def _synthetic_iris_features_and_labels() -> tuple[torch.Tensor, torch.Tensor]:
-    """Stand in for the UCI Iris file with the same shapes and value ranges."""
+def _synthetic_iris_dataset(
+    *, train_fraction: float = 0.66, random_seed: int
+) -> ClassificationDataset:
+    """Stand in for ``load_iris`` with the same shapes and return type.
+
+    Builds a synthetic 150-sample Iris and runs it through the real
+    ``split_features_and_labels``, so the example's call site and the split seam
+    are exercised without touching the UCI file.
+    """
     rng = np.random.default_rng(0)
     features = rng.random((_IRIS_SAMPLE_COUNT, _IRIS_FEATURE_COUNT), dtype=np.float32)
     labels = np.arange(_IRIS_SAMPLE_COUNT, dtype=np.int64) % _IRIS_CLASS_COUNT
-    return torch.from_numpy(features), torch.from_numpy(labels)
+    return split_features_and_labels(
+        torch.from_numpy(features),
+        torch.from_numpy(labels),
+        train_fraction=train_fraction,
+        random_seed=random_seed,
+        number_of_classes=_IRIS_CLASS_COUNT,
+    )
 
 
-def _synthetic_pooled_mnist(
-    pooled_grid_side: int,
-    training_subset_size: int,
-    test_subset_size: int,
+def _synthetic_mnist_dataset(
+    *,
+    train_fraction: float = 6 / 7,
     random_seed: int,
-) -> MnistSubsets:
-    """Stand in for the pooled MNIST subsets.
+    grid_side: int = 7,
+    max_train_samples: int | None = 3000,
+    max_test_samples: int | None = 2000,
+) -> ClassificationDataset:
+    """Stand in for ``load_mnist`` with the same signature and return type.
 
-    The signature matches ``load_pooled_mnist_train_and_test`` so the example's
-    call site is exercised unchanged. Subset sizes are capped well below what
-    the examples ask for, since the point is to run the pipeline, not to train.
+    Subset caps are shrunk well below what the examples ask for, since the point
+    is to run the pipeline, not to train. The real ``split_features_and_labels``
+    still does the splitting and subsetting.
     """
     rng = np.random.default_rng(random_seed)
-    number_of_features = pooled_grid_side * pooled_grid_side
-    train_size = min(training_subset_size, _MNIST_SMOKE_TRAIN_SIZE)
-    test_size = min(test_subset_size, _MNIST_SMOKE_TEST_SIZE)
-
-    def draw(sample_count: int) -> tuple[torch.Tensor, torch.Tensor]:
-        features = rng.standard_normal(
-            (sample_count, number_of_features), dtype=np.float32
-        )
-        labels = np.arange(sample_count, dtype=np.int64) % _MNIST_CLASS_COUNT
-        return torch.from_numpy(features), torch.from_numpy(labels)
-
-    train_features, train_labels = draw(train_size)
-    test_features, test_labels = draw(test_size)
-    return MnistSubsets(
-        train_features=train_features,
-        train_labels=train_labels,
-        test_features=test_features,
-        test_labels=test_labels,
+    number_of_features = grid_side * grid_side
+    total = _MNIST_SMOKE_TRAIN_SIZE + _MNIST_SMOKE_TEST_SIZE
+    features = rng.standard_normal((total, number_of_features), dtype=np.float32)
+    labels = np.arange(total, dtype=np.int64) % _MNIST_CLASS_COUNT
+    return split_features_and_labels(
+        torch.from_numpy(features),
+        torch.from_numpy(labels),
+        train_fraction=train_fraction,
+        random_seed=random_seed,
+        max_train_samples=min(max_train_samples or total, _MNIST_SMOKE_TRAIN_SIZE),
+        max_test_samples=min(max_test_samples or total, _MNIST_SMOKE_TEST_SIZE),
+        number_of_classes=_MNIST_CLASS_COUNT,
     )
 
 
@@ -134,16 +143,10 @@ def _redirect_dataset_loaders(
     module's own namespace and ``setattr`` on the module reaches them. The real
     loaders are never called.
     """
-    if hasattr(example_module, "load_iris_features_and_labels"):
-        monkeypatch.setattr(
-            example_module,
-            "load_iris_features_and_labels",
-            _synthetic_iris_features_and_labels,
-        )
-    if hasattr(example_module, "load_pooled_mnist_train_and_test"):
-        monkeypatch.setattr(
-            example_module, "load_pooled_mnist_train_and_test", _synthetic_pooled_mnist
-        )
+    if hasattr(example_module, "load_iris"):
+        monkeypatch.setattr(example_module, "load_iris", _synthetic_iris_dataset)
+    if hasattr(example_module, "load_mnist"):
+        monkeypatch.setattr(example_module, "load_mnist", _synthetic_mnist_dataset)
 
 
 @pytest.mark.parametrize("example_id", sorted(EXAMPLE_REGISTRY))
