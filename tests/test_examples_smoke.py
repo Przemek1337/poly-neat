@@ -27,7 +27,7 @@ import torch
 import polyneat as pn
 from examples._datasets import ClassificationDataset, split_features_and_labels
 from examples._experiment import EXAMPLE_REGISTRY
-from polyneat.config.algorithm_config import AlgorithmConfig
+from polyneat.configs.algorithm_config import AlgorithmConfig
 
 _SMOKE_POPULATION_SIZE = 8
 _SMOKE_GENERATION_LIMIT = 2
