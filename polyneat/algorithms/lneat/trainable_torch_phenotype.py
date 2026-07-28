@@ -23,15 +23,16 @@ class TrainableTorchFeedForwardPhenotype(nn.Module):
     train the weights and write them back into a new genome via
     :meth:`extract_genome_with_trained_weights`. Evaluation semantics match
     the non-trainable phenotype exactly: nodes are evaluated in topological
-    order, the bias node is a constant 1.0, and output nodes with no enabled
-    incoming path yield zeros.
+    order, the bias node is a constant 1.0, and an output node with no enabled
+    incoming path yields ``activation(0)``.
 
     Recurrent phenotypes will use a separate class; this one is strictly
     feed-forward and its ``reset_recurrent_state`` is a no-op.
 
     References:
-        Chen, L., & Alahakoon, D. (2006). NeuroEvolution of Augmenting
-        Topologies with Learning for Data Classification. *ICIA 2006*.
+        Chen, L., & Alahakoon, D. (2006). NeuroEvolution of Augmenting Topologies with Learning
+            for Data Classification. *ICIA 2006: 2nd International Conference on Information and
+            Automation*, pp. 367-371.
     """
 
     def __init__(
@@ -114,8 +115,10 @@ class TrainableTorchFeedForwardPhenotype(nn.Module):
 
         Returns:
             Output activations of shape ``(batch, num_outputs)``, with output
-            columns in node registration order. Outputs with no enabled
-            incoming path yield zeros.
+            columns in node registration order. An output node with no enabled
+            incoming path still sits in the topological order, so it sums an
+            empty input and yields ``activation(0)`` - for the default steepened
+            sigmoid that is 0.5, not 0.0.
         """
         input_tensor_on_target_device = input_tensor.to(self._device_for_computation)
         if input_tensor_on_target_device.dim() == 1:

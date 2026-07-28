@@ -17,6 +17,17 @@ class ToggleConnectionEnabledMutation:
     that was disabled by ``AddNodeMutation``. When re-enabling would introduce
     a directed cycle (possible because ``AddConnectionMutation`` only checks
     the currently-enabled topology), the toggle is silently skipped.
+
+    Deviation from the source paper: the paper's genome carries the enable bit
+    (section 3.1) and its crossover may re-enable a gene that was disabled in a
+    parent, but the paper does not list a standalone toggle mutation among its
+    mutation operators. This operator is an addition, common to later NEAT
+    implementations, and is disabled by setting its probability to 0.0.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Enable bit and its role in crossover: section 3.1-3.2.)
     """
 
     def __init__(self, probability_of_application: float) -> None:

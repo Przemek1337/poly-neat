@@ -148,9 +148,9 @@ def build_fs_neat_initial_population(
         Generation-0 population of single-connection genomes.
 
     References:
-        Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R., &
-        Kohl, N. (2005). Automatic Feature Selection in Neuroevolution.
-        *GECCO 2005*.
+        Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R., & Kohl, N. (2005). Automatic
+            Feature Selection in Neuroevolution. *GECCO 2005: Proceedings of the Genetic and
+            Evolutionary Computation Conference*, pp. 1225-1232.
     """
     template_node_genes = _build_node_gene_template(config)
 

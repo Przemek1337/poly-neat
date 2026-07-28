@@ -14,6 +14,17 @@ class TournamentParentSelection(Generic[GenomeType]):
 
     Larger ``tournament_size`` values push selection pressure up (favours the
     fittest more aggressively); ``tournament_size=1`` is uniform random.
+
+    Deviation from the source paper: Stanley & Miikkulainen (2002) prescribe
+    explicit fitness sharing (section 3.3) and per-species offspring allocation,
+    but do not prescribe how an individual parent is drawn from a species once
+    the low performers have been eliminated. Tournament selection is this
+    implementation's choice, not a rule taken from the paper.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Selection pressure within a species is unspecified there; see section 3.3.)
     """
 
     def __init__(self, tournament_size: int) -> None:

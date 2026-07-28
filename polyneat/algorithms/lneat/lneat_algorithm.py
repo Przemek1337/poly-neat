@@ -50,9 +50,9 @@ class LNEATAlgorithm(NEATAlgorithm):
             to vanilla NEAT.
 
     References:
-        Chen, L., & Alahakoon, D. (2006). NeuroEvolution of Augmenting
-        Topologies with Learning for Data Classification. *ICIA 2006*,
-        pp. 367-371.
+        Chen, L., & Alahakoon, D. (2006). NeuroEvolution of Augmenting Topologies with Learning
+            for Data Classification. *ICIA 2006: 2nd International Conference on Information and
+            Automation*, pp. 367-371.
     """
 
     config: LNEATConfig

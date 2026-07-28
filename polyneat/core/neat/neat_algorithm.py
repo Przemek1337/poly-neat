@@ -540,9 +540,12 @@ class NEATAlgorithm:
     ) -> list[NEATGenome]:
         """Return the genomes copied unchanged into the next generation.
 
-        The paper (section 4.1) carries over the champion of each species
-        with more than five members; both the count and the size threshold
-        are configurable here.
+        The paper (section 4.1) carries over the champion of each species with
+        *more than* five networks. Both the count and the size threshold are
+        configurable here, and the threshold is applied inclusively
+        (``len(members) >= minimum_species_size_for_elitism``), so the default of
+        5 also grants elitism to a species of exactly five - one member fewer
+        than the paper's rule. Set it to 6 to match the paper exactly.
         """
         if len(member_genomes_in_species) < self.config.minimum_species_size_for_elitism:
             return []
