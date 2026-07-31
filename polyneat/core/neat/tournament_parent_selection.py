@@ -34,14 +34,20 @@ class TournamentParentSelection(Generic[GenomeType]):
             )
         self._tournament_size = tournament_size
 
-    def select_parents(
+    def select_parent_indices(
         self,
         candidate_genomes: list[GenomeType],
         candidate_fitnesses: list[FitnessValue],
         number_of_parents_to_select: int,
         rng: Generator,
-    ) -> list[GenomeType]:
-        """Run one tournament per requested parent.
+    ) -> list[int]:
+        """Run one tournament per requested parent and return the winners' positions.
+
+        Positions rather than genomes, because the caller usually needs the
+        winner's fitness too. Recovering it by searching the pool for an equal
+        genome is wrong: genomes compare by value, so duplicates (elites, clones,
+        no-op mutations) would yield the first equal genome's fitness instead of
+        the selected one's.
 
         Args:
             candidate_genomes: Pool to select from.
@@ -50,7 +56,7 @@ class TournamentParentSelection(Generic[GenomeType]):
             rng: Source of randomness for tournament sampling.
 
         Returns:
-            The selected parents (possibly with repeats).
+            Indices into ``candidate_genomes`` (possibly with repeats).
 
         Raises:
             ValueError: If the pool is empty or the lists are misaligned.
@@ -64,7 +70,7 @@ class TournamentParentSelection(Generic[GenomeType]):
         if not candidate_genomes:
             raise ValueError("TournamentParentSelection: no candidate genomes given")
 
-        selected_parent_genomes: list[GenomeType] = []
+        selected_parent_indices: list[int] = []
         for _selection_step_index in range(number_of_parents_to_select):
             tournament_participant_indices = rng.integers(
                 low=0,
@@ -75,5 +81,39 @@ class TournamentParentSelection(Generic[GenomeType]):
                 tournament_participant_indices,
                 key=lambda participant_index: candidate_fitnesses[int(participant_index)],
             )
-            selected_parent_genomes.append(candidate_genomes[int(winner_index_in_population)])
-        return selected_parent_genomes
+            selected_parent_indices.append(int(winner_index_in_population))
+        return selected_parent_indices
+
+    def select_parents(
+        self,
+        candidate_genomes: list[GenomeType],
+        candidate_fitnesses: list[FitnessValue],
+        number_of_parents_to_select: int,
+        rng: Generator,
+    ) -> list[GenomeType]:
+        """Run one tournament per requested parent.
+
+        Convenience wrapper over :meth:`select_parent_indices` for callers that
+        do not need the winners' positions.
+
+        Args:
+            candidate_genomes: Pool to select from.
+            candidate_fitnesses: Fitness per candidate, aligned by index.
+            number_of_parents_to_select: How many parents to return.
+            rng: Source of randomness for tournament sampling.
+
+        Returns:
+            The selected parents (possibly with repeats).
+
+        Raises:
+            ValueError: If the pool is empty or the lists are misaligned.
+        """
+        return [
+            candidate_genomes[selected_index]
+            for selected_index in self.select_parent_indices(
+                candidate_genomes=candidate_genomes,
+                candidate_fitnesses=candidate_fitnesses,
+                number_of_parents_to_select=number_of_parents_to_select,
+                rng=rng,
+            )
+        ]

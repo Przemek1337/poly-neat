@@ -26,14 +26,19 @@ class NEATConfig(AlgorithmConfig):
     # Mutation rates
     probability_of_add_node_mutation: float = 0.03
     probability_of_add_connection_mutation: float = 0.05
-    probability_of_weight_perturbation: float = 0.8
+    # Section 4.1: 80% of genomes mutate their weights at all; within such a
+    # genome each weight is perturbed with probability 0.9 and replaced with 0.1.
+    probability_of_genome_weight_mutation: float = 0.8
+    probability_of_weight_perturbation: float = 0.9
     probability_of_weight_replacement: float = 0.1
     probability_of_toggle_connection_enabled: float = 0.01
 
     # Weight initialization & perturbation
     initial_weight_range_min: float = -1.0
     initial_weight_range_max: float = 1.0
-    weight_perturbation_strength_sigma: float = 0.5
+    # Half-width of the uniform perturbation, Stanley's ``power``. Not a Gaussian
+    # sigma: section 4.1 perturbs weights uniformly.
+    weight_perturbation_magnitude: float = 0.5
 
     # Speciation (compatibility distance)
     compatibility_distance_coefficient_excess_c1: float = 1.0
@@ -44,7 +49,9 @@ class NEATConfig(AlgorithmConfig):
     # Species management
     species_elitism_count: int = 1
     species_stagnation_generations_limit: int = 15
-    minimum_species_size_for_elitism: int = 5
+    # Section 4.1 copies the champion of each species with *more than* five
+    # networks, so the inclusive threshold below is 6.
+    minimum_species_size_for_elitism: int = 6
 
     # Crossover
     probability_of_crossover_vs_mutation_only: float = 0.75
@@ -75,6 +82,7 @@ class NEATConfig(AlgorithmConfig):
         for prob_field in (
             "probability_of_add_node_mutation",
             "probability_of_add_connection_mutation",
+            "probability_of_genome_weight_mutation",
             "probability_of_weight_perturbation",
             "probability_of_weight_replacement",
             "probability_of_toggle_connection_enabled",

@@ -77,9 +77,12 @@ class HyperNEATAlgorithm(NEATAlgorithm):
         return CompositeNEATMutation(
             ordered_individual_mutations=[
                 WeightModificationMutation(
+                    probability_of_genome_weight_mutation=(
+                        config.probability_of_genome_weight_mutation
+                    ),
                     probability_of_perturbation=config.probability_of_weight_perturbation,
                     probability_of_replacement=config.probability_of_weight_replacement,
-                    perturbation_strength_sigma=config.weight_perturbation_strength_sigma,
+                    weight_perturbation_magnitude=config.weight_perturbation_magnitude,
                     initial_weight_range_min=config.initial_weight_range_min,
                     initial_weight_range_max=config.initial_weight_range_max,
                 ),
