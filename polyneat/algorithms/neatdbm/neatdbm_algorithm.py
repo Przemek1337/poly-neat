@@ -38,10 +38,10 @@ class NEATDBMAlgorithm(NEATAlgorithm):
             operator, constructed from ``config`` in ``__post_init__``.
 
     References:
-        Stanovov, V., Akhmedova, Sh., & Semenkin, E. (2021). Neuroevolution
-        of augmented topologies with difference-based mutation. *IOP
-        Conference Series: Materials Science and Engineering*, 1047, 012075.
-        DOI: 10.1088/1757-899X/1047/1/012075
+        Stanovov, V., Akhmedova, Sh., & Semenkin, E. (2021). Neuroevolution of augmented
+            topologies with difference-based mutation. *IOP Conference Series: Materials Science
+            and Engineering*, 1047, 012075.
+            DOI: 10.1088/1757-899X/1047/1/012075
     """
 
     config: NEATDBMConfig

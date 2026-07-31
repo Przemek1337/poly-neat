@@ -14,15 +14,30 @@ from polyneat.nn.topology_utilities import compute_topological_order_of_node_ids
 class TorchFeedForwardPhenotype(nn.Module):
     """Executes a NEAT feed-forward network by evaluating nodes in topological order.
 
-    Subclassing ``nn.Module`` is deliberate: it grants ``.to(device)``,
-    ``.state_dict()``, and ``.parameters()`` even though the ``Phenotype``
-    protocol only requires ``forward_pass``. Weights are stored as a *fixed*
-    parameter tensor per input connection, not as ``nn.Linear`` layers — the
-    NEAT topology is irregular so per-connection weights are the natural
-    representation.
+    The phenotype side of the paper's direct encoding (section 3.1): the genome's
+    enabled connection genes are read into a per-target adjacency table, the nodes
+    are sorted topologically once at construction, and ``forward_pass`` walks that
+    order summing weighted inputs. The bias node is a constant 1.0 input
+    (section 4.2). The NEAT topology is irregular, so per-connection weights are
+    used rather than ``nn.Linear`` layers.
+
+    Weights are stored as plain Python floats, **not** as ``nn.Parameter``: this
+    phenotype is evaluated, never trained, so it registers no parameters and no
+    buffers. Consequently ``.parameters()`` and ``.state_dict()`` are empty and
+    ``.to(device)`` moves nothing - tensors are created directly on
+    ``device_for_computation`` inside ``forward_pass``. Subclassing ``nn.Module``
+    buys only interface uniformity with
+    :class:`~polyneat.algorithms.lneat.trainable_torch_phenotype.TrainableTorchFeedForwardPhenotype`,
+    which *does* register one ``nn.Parameter`` per enabled connection so L-NEAT's
+    backpropagation sessions can reach the weights.
 
     Recurrent phenotypes will use a separate class; this one is strictly
     feed-forward and its ``reset_recurrent_state`` is a no-op.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Genetic encoding: section 3.1; bias node: section 4.2.)
     """
 
     def __init__(
@@ -96,8 +111,10 @@ class TorchFeedForwardPhenotype(nn.Module):
 
         Returns:
             Output activations of shape ``(batch, num_outputs)``, with output
-            columns in node registration order. Outputs with no enabled
-            incoming path yield zeros.
+            columns in node registration order. An output node with no enabled
+            incoming path still sits in the topological order, so it sums an
+            empty input and yields ``activation(0)`` - for the default steepened
+            sigmoid that is 0.5, not 0.0.
         """
         input_tensor_on_target_device = input_tensor.to(self._device_for_computation)
         if input_tensor_on_target_device.dim() == 1:

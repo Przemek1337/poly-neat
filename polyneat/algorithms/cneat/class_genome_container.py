@@ -14,9 +14,11 @@ class ClassGenomeContainer:
     is preserved across generations even when the population drifts.
 
     References:
-        Alfaham, A., Van Raemdonck, S., & Mercelis, S. (2024). Genetic
-        NEAT-Based Method for Multi-class Classification. *ACAI 2024*,
-        section IV.
+        Alfaham, A., Van Raemdonck, S., & Mercelis, S. (2024). Genetic NEAT-Based Method for
+            Multi-Class Classification. *ACAI 2024: 7th International Conference on Algorithms,
+            Computing and Artificial Intelligence*.
+            DOI: 10.1109/ACAI63924.2024.10899662
+        (Section IV.)
     """
 
     def __init__(self, number_of_class_labels: int) -> None:

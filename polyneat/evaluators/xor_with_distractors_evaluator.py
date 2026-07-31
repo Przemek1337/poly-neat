@@ -29,9 +29,9 @@ class XORWithDistractorsEvaluator(SequentialFitnessEvaluator):
     fixed seed, keeping fitness deterministic across the whole run.
 
     References:
-        Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R., &
-        Kohl, N. (2005). Automatic Feature Selection in Neuroevolution.
-        *GECCO 2005*.
+        Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R., & Kohl, N. (2005). Automatic
+            Feature Selection in Neuroevolution. *GECCO 2005: Proceedings of the Genetic and
+            Evolutionary Computation Conference*, pp. 1225-1232.
     """
 
     def __init__(

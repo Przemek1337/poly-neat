@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# Import the example's importable helpers directly (no MNIST download involved).
-import importlib.util
 import math
 from pathlib import Path
 
@@ -9,18 +7,13 @@ import numpy as np
 import torch
 
 import polyneat as pn
+from examples.mnist import hyperneat as mnist_hyperneat_example
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
 )
 from polyneat.evaluators.softmax_likelihood_evaluator import (
     SoftmaxLikelihoodFitnessEvaluator,
 )
-
-_EXAMPLE_PATH = Path(__file__).parent.parent / "examples" / "mnist_hyperneat.py"
-_spec = importlib.util.spec_from_file_location("mnist_hyperneat_example", _EXAMPLE_PATH)
-assert _spec is not None and _spec.loader is not None
-mnist_hyperneat_example = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(mnist_hyperneat_example)
 
 _GRID = 4
 _NUM_CLASSES = 3
@@ -46,7 +39,9 @@ def _synthetic_dataset() -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def test_example_config_loads_as_hyperneat_config():
-    config_path = Path(__file__).parent.parent / "examples" / "mnist_hyperneat.yaml"
+    config_path = (
+        Path(__file__).parent.parent / "examples" / "mnist" / "hyperneat.yaml"
+    )
     config = pn.HyperNEATConfig.load_from_yaml_file(config_path)
     assert config.number_of_input_nodes == 4  # CPPN coordinate inputs
     assert config.substrate_output_layer_size == 10

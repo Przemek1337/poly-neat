@@ -7,9 +7,9 @@ builders: a 1-D layered stack (`build_layered_substrate`) and a 2-D two-sheet
 "sandwich" (`build_grid_sandwich_substrate`).
 
 References:
-    Stanley, K. O., D'Ambrosio, D. B., & Gauci, J. (2009). A hypercube-based
-    encoding for evolving large-scale neural networks. Artificial Life, 15(2),
-    185-212.
+    Stanley, K. O., D'Ambrosio, D. B., & Gauci, J. (2009). A Hypercube-Based Encoding for
+        Evolving Large-Scale Neural Networks. *Artificial Life*, 15(2), 185-212.
+        DOI: 10.1162/artl.2009.15.2.15202
 """
 
 from __future__ import annotations

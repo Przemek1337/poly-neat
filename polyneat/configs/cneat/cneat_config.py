@@ -1,9 +1,10 @@
 """Configuration for the C-NEAT algorithm.
 
 References:
-    Alfaham, A., Van Raemdonck, S., & Mercelis, S. (2024). Genetic NEAT-Based
-    Method for Multi-class Classification. *ACAI 2024*.
-    DOI: 10.1109/ACAI63924.2024.10899662
+    Alfaham, A., Van Raemdonck, S., & Mercelis, S. (2024). Genetic NEAT-Based Method for
+        Multi-Class Classification. *ACAI 2024: 7th International Conference on Algorithms,
+        Computing and Artificial Intelligence*.
+        DOI: 10.1109/ACAI63924.2024.10899662
 """
 from __future__ import annotations
 

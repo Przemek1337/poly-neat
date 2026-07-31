@@ -7,7 +7,7 @@ import polyneat as pn
 from polyneat.evaluators.xor_evaluator import XORFitnessEvaluator
 
 _EXAMPLE_CONFIG_PATH = (
-    Path(__file__).parent.parent / "examples" / "xor_hyperneat.yaml"
+    Path(__file__).parent.parent / "examples" / "xor" / "hyperneat.yaml"
 )
 
 

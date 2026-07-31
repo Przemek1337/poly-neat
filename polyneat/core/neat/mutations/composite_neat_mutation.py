@@ -9,14 +9,27 @@ from polyneat.core.neat.neat_genome import NEATGenome
 class CompositeNEATMutation:
     """Applies a fixed ordered list of NEAT mutation operators to a genome.
 
-    Order matters — the canonical NEAT pipeline is:
+    Order matters. The pipeline wired up by ``NEATAlgorithm._build_mutation`` is:
 
         1. WeightModificationMutation
         2. AddConnectionMutation
         3. AddNodeMutation
         4. ToggleConnectionEnabledMutation
 
+    Steps 1-3 are the three mutation types of the paper (section 3.1): weight
+    mutation plus the two structural mutations, add-connection and add-node.
+    Step 4 is an addition of this implementation, not an operator of the paper -
+    see :class:`ToggleConnectionEnabledMutation` for why.
+    The order is a choice of this implementation; the paper does not prescribe
+    one. Structural mutations run after weight mutation so a freshly added
+    connection keeps the weight its own operator drew for it.
+
     Each operator decides internally whether it actually fires.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Mutation types: section 3.1, Figure 3.)
     """
 
     def __init__(self, ordered_individual_mutations: list[MutationOperator[NEATGenome]]) -> None:

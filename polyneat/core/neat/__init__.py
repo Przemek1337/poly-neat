@@ -7,6 +7,6 @@ overrides only the factory methods or steps it changes, while the generational
 loop stays shared and untouched.
 
 References:
-    Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
-    through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+    Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks through Augmenting
+        Topologies. *Evolutionary Computation*, 10(2), 99-127.
 """

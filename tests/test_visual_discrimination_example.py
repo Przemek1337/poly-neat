@@ -1,22 +1,16 @@
 from __future__ import annotations
 
-import importlib.util
 import math
 from pathlib import Path
 
 import polyneat as pn
+from examples.visual_discrimination import (
+    hyperneat as visual_discrimination_example,
+)
 from polyneat.evaluators.visual_discrimination_evaluator import (
     VisualDiscriminationFitnessEvaluator,
     generate_visual_discrimination_trials,
 )
-
-_EXAMPLE_PATH = (
-    Path(__file__).parent.parent / "examples" / "visual_discrimination_hyperneat.py"
-)
-_spec = importlib.util.spec_from_file_location("visual_discrimination_example", _EXAMPLE_PATH)
-assert _spec is not None and _spec.loader is not None
-visual_discrimination_example = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(visual_discrimination_example)
 
 _FIELD_SIDE = 5
 
@@ -34,7 +28,10 @@ def _small_config() -> pn.HyperNEATConfig:
 
 def test_example_config_loads_as_hyperneat_config():
     config_path = (
-        Path(__file__).parent.parent / "examples" / "visual_discrimination_hyperneat.yaml"
+        Path(__file__).parent.parent
+        / "examples"
+        / "visual_discrimination"
+        / "hyperneat.yaml"
     )
     config = pn.HyperNEATConfig.load_from_yaml_file(config_path)
     assert config.number_of_input_nodes == 4  # CPPN coordinate inputs

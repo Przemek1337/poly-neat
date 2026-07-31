@@ -5,6 +5,14 @@ algorithm-agnostic in general. Concepts that every NEAT variant shares —
 innovation tracking (historical markings), speciation, genome/phenotype
 separation — belong here. Anything specific to a single variant belongs in
 that variant's package under ``polyneat/algorithms/``.
+
+Section numbers quoted on the individual protocols below refer to the NEAT
+paper. Where a protocol has no counterpart there (``ParentSelection``,
+``FitnessEvaluator``), the docstring says so instead of citing one.
+
+References:
+    Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+        through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
 """
 
 from __future__ import annotations
@@ -24,7 +32,10 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class Genome(Protocol):
-    """Immutable genotype. All operators return a new Genome instead of mutating in place."""
+    """Immutable genotype. All operators return a new Genome instead of mutating in place.
+
+    The genotype half of the paper's genotype/phenotype split (section 3.1).
+    """
 
     def clone_genome(self) -> Genome: ...
     def to_serializable_dict(self) -> dict: ...
@@ -35,7 +46,10 @@ class Genome(Protocol):
 
 @runtime_checkable
 class Phenotype(Protocol):
-    """Executable neural network built from a Genome."""
+    """Executable neural network built from a Genome.
+
+    The phenotype half of the paper's genotype/phenotype split (section 3.1).
+    """
 
     def forward_pass(self, input_tensor: torch.Tensor) -> torch.Tensor: ...
     def reset_recurrent_state(self) -> None: ...
@@ -80,6 +94,11 @@ ConfigType = TypeVar("ConfigType", bound="AlgorithmConfig", contravariant=True)
 class InitialPopulationStrategy(Protocol[ConfigType]):
     """Builds generation 0 of a population.
 
+    The paper starts from a uniform minimal topology with no hidden nodes
+    (section 3.4, "Minimizing Dimensionality through Incremental Growth"); this
+    protocol keeps that starting point swappable, so FS-NEAT can substitute its
+    single-connection start without touching the generational loop.
+
     Selected by name from config via a per-algorithm strategy registry, or
     assigned directly to the algorithm's ``initial_population_factory``. Plain
     functions satisfy this protocol; a strategy needing state is a class with
@@ -96,7 +115,11 @@ class InitialPopulationStrategy(Protocol[ConfigType]):
 
 @runtime_checkable
 class MutationOperator(Protocol[GenomeType]):
-    """A single mutation, as a pure function (deterministic given RNG)."""
+    """A single mutation, as a pure function (deterministic given RNG).
+
+    Covers the paper's mutation types (section 3.1): weight mutation plus the
+    two structural mutations, add-connection and add-node.
+    """
 
     def apply_to_genome(
         self,
@@ -108,7 +131,12 @@ class MutationOperator(Protocol[GenomeType]):
 
 @runtime_checkable
 class CrossoverOperator(Protocol[GenomeType]):
-    """Mates two parents into one child; the fitter parent goes first."""
+    """Mates two parents into one child; the fitter parent goes first.
+
+    Gene alignment by historical marking (paper, section 3.2, Figure 4): the
+    fitter-parent-first argument order encodes the paper's rule that disjoint
+    and excess genes are inherited from the fitter parent.
+    """
 
     def apply_to_parents(
         self,
@@ -120,7 +148,12 @@ class CrossoverOperator(Protocol[GenomeType]):
 
 @runtime_checkable
 class ParentSelection(Protocol[GenomeType]):
-    """Selects reproduction parents from a candidate pool."""
+    """Selects reproduction parents from a candidate pool.
+
+    Not a concept of the source paper: Stanley & Miikkulainen (2002) prescribe
+    fitness sharing and per-species offspring allocation but leave the draw of
+    an individual parent unspecified. Implementations choose their own scheme.
+    """
 
     def select_parents(
         self,
