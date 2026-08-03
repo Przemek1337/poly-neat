@@ -37,9 +37,7 @@ class GlobalInnovationTracker:
     them. The tracker deduplicates within a single generation via
     ``reset_for_new_generation``.
 
-    Add-node mutations are tracked separately by
-    :meth:`get_or_assign_node_split`, keyed by the *innovation id of the edge
-    being split*. Keying on the endpoint pair alone is not enough: every genome
+
     of a minimal start carries the same node ids, so two genomes splitting two
     different edges would independently pick the same new node id and their
     outgoing edges would collide on one ``(source, target)`` key — handing

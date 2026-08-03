@@ -28,10 +28,7 @@ class WeightModificationMutation:
     weight vector into the next generation untouched. Drawing independently per
     connection would make that outcome vanish for anything but a tiny genome.
 
-    The per-connection probabilities are checked in the order above and are
-    therefore *not* independent, which matches Stanley's convention.
-
-    The perturbation is *uniform*, not Gaussian: section 4.1 says each weight is
+    
     "uniformly perturbed", and the reference implementation draws
     ``randposneg() * randfloat() * power`` in ``Genome::mutate_link_weights``,
     i.e. uniformly from ``[-power, power]`` - despite its ``GAUSSIAN`` enum name.

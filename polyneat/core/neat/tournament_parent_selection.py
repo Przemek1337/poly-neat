@@ -41,26 +41,6 @@ class TournamentParentSelection(Generic[GenomeType]):
         number_of_parents_to_select: int,
         rng: Generator,
     ) -> list[int]:
-        """Run one tournament per requested parent and return the winners' positions.
-
-        Positions rather than genomes, because the caller usually needs the
-        winner's fitness too. Recovering it by searching the pool for an equal
-        genome is wrong: genomes compare by value, so duplicates (elites, clones,
-        no-op mutations) would yield the first equal genome's fitness instead of
-        the selected one's.
-
-        Args:
-            candidate_genomes: Pool to select from.
-            candidate_fitnesses: Fitness per candidate, aligned by index.
-            number_of_parents_to_select: How many parents to return.
-            rng: Source of randomness for tournament sampling.
-
-        Returns:
-            Indices into ``candidate_genomes`` (possibly with repeats).
-
-        Raises:
-            ValueError: If the pool is empty or the lists are misaligned.
-        """
         if len(candidate_genomes) != len(candidate_fitnesses):
             raise ValueError(
                 f"TournamentParentSelection: candidate_genomes has length "
@@ -91,23 +71,6 @@ class TournamentParentSelection(Generic[GenomeType]):
         number_of_parents_to_select: int,
         rng: Generator,
     ) -> list[GenomeType]:
-        """Run one tournament per requested parent.
-
-        Convenience wrapper over :meth:`select_parent_indices` for callers that
-        do not need the winners' positions.
-
-        Args:
-            candidate_genomes: Pool to select from.
-            candidate_fitnesses: Fitness per candidate, aligned by index.
-            number_of_parents_to_select: How many parents to return.
-            rng: Source of randomness for tournament sampling.
-
-        Returns:
-            The selected parents (possibly with repeats).
-
-        Raises:
-            ValueError: If the pool is empty or the lists are misaligned.
-        """
         return [
             candidate_genomes[selected_index]
             for selected_index in self.select_parent_indices(

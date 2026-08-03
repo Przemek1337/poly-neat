@@ -308,12 +308,6 @@ class NEATAlgorithm:
             ]
             member_fitnesses_in_species = species_state.raw_fitnesses
 
-            # Elitism spends the species' own offspring slots, it does not add
-            # to them: a species the allocator gave no slots to is dying out and
-            # must not emit a champion anyway. Without the cap the emitted total
-            # exceeds population_size and the trailing genomes - belonging to
-            # whichever species happens to be last, not to the weakest one - are
-            # cut by the truncation below.
             elite_genomes_from_species = self._pick_elite_genomes_from_species(
                 member_genomes_in_species=member_genomes_in_species,
                 member_fitnesses_in_species=member_fitnesses_in_species,
@@ -555,9 +549,6 @@ class NEATAlgorithm:
         (``len(members) >= minimum_species_size_for_elitism``), so the default of
         6 reproduces the paper's rule exactly.
 
-        Stanley's reference implementation gates elitism on the species' *allocated
-        offspring* instead (``expected_offspring > 5``); PolyNEAT follows the
-        published text and gates on member count.
         """
         if len(member_genomes_in_species) < self.config.minimum_species_size_for_elitism:
             return []
@@ -614,15 +605,6 @@ class NEATAlgorithm:
         candidate_fitnesses: list[FitnessValue],
         rng: Generator,
     ) -> tuple[NEATGenome, FitnessValue]:
-        """Select one parent and return it together with its fitness.
-
-        Goes through ``select_parent_indices`` so the fitness comes from the
-        genome that was actually drawn. Looking the winner up by value would
-        return the first *equal* genome's fitness instead — genomes are frozen
-        dataclasses, and duplicates are routine (elites are copied by reference,
-        mutations can be no-ops) — and that fitness decides which parent
-        crossover treats as the fitter one.
-        """
         selected_parent_index = self.parent_selection.select_parent_indices(
             candidate_genomes=candidate_genomes,
             candidate_fitnesses=candidate_fitnesses,

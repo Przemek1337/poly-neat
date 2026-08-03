@@ -78,14 +78,6 @@ class InnovationTracker(Protocol):
     def get_or_assign_node_split(
         self, split_connection_innovation_id: int, minimum_new_node_id: int
     ) -> tuple[int, int, int]:
-        """Return ``(new_node_id, innovation_into_node, innovation_out_of_node)``.
-
-        Add-node mutations are keyed by the innovation id of the edge they
-        split, not by endpoint pairs, so genomes that split different edges
-        never share a node id or an innovation id. ``minimum_new_node_id`` is
-        the caller's floor, keeping the new node clear of the calling genome's
-        existing nodes.
-        """
         ...
 
     def reset_for_new_generation(self) -> None: ...
@@ -175,12 +167,6 @@ class ParentSelection(Protocol[GenomeType]):
         number_of_parents_to_select: int,
         rng: Generator,
     ) -> list[int]:
-        """Return the winners' positions in ``candidate_genomes``.
-
-        Positions, not genomes: callers that also need the winner's fitness
-        cannot recover it by searching the pool, because genomes compare by
-        value and duplicates are routine.
-        """
         ...
 
     def select_parents(
