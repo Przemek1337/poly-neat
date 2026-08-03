@@ -75,6 +75,11 @@ class InnovationTracker(Protocol):
         self, source_node_id: int, target_node_id: int
     ) -> int: ...
 
+    def get_or_assign_node_split(
+        self, split_connection_innovation_id: int, minimum_new_node_id: int
+    ) -> tuple[int, int, int]:
+        ...
+
     def reset_for_new_generation(self) -> None: ...
 
 
@@ -154,6 +159,15 @@ class ParentSelection(Protocol[GenomeType]):
     fitness sharing and per-species offspring allocation but leave the draw of
     an individual parent unspecified. Implementations choose their own scheme.
     """
+
+    def select_parent_indices(
+        self,
+        candidate_genomes: list[GenomeType],
+        candidate_fitnesses: list[FitnessValue],
+        number_of_parents_to_select: int,
+        rng: Generator,
+    ) -> list[int]:
+        ...
 
     def select_parents(
         self,

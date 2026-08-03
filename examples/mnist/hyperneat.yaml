@@ -35,12 +35,13 @@ max_substrate_connection_weight_magnitude: 3.0
 # CPPN genetics (standard NEAT). CPPN weight range -3..3 per the paper.
 probability_of_add_node_mutation: 0.03
 probability_of_add_connection_mutation: 0.10
+probability_of_genome_weight_mutation: 0.80
 probability_of_weight_perturbation: 0.90
 probability_of_weight_replacement: 0.10
 probability_of_toggle_connection_enabled: 0.01
 initial_weight_range_min: -3.0
 initial_weight_range_max: 3.0
-weight_perturbation_strength_sigma: 0.4
+weight_perturbation_magnitude: 0.4
 
 # CPPN function set (paper: Gaussian, Sigmoid, Sine, Absolute value, Linear).
 available_activation_functions: [sigmoid, gaussian, sine, absolute_value, identity]
@@ -54,7 +55,7 @@ compatibility_distance_coefficient_weight_difference_c3: 0.4
 compatibility_distance_threshold: 3.0
 species_elitism_count: 1
 species_stagnation_generations_limit: 15
-minimum_species_size_for_elitism: 5
+minimum_species_size_for_elitism: 6
 probability_of_crossover_vs_mutation_only: 0.75
 probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
 probability_of_interspecies_mating: 0.001

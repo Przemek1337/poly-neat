@@ -100,8 +100,6 @@ class TorchFeedForwardPhenotype(nn.Module):
         self._node_id_to_activation_function = node_id_to_activation_function
         self._node_id_to_node_type = node_id_to_node_type
 
-        self.to(device_for_computation)
-
     def forward_pass(self, input_tensor: torch.Tensor) -> torch.Tensor:
         """Evaluate the network on a batch of inputs.
 
@@ -158,11 +156,11 @@ class TorchFeedForwardPhenotype(nn.Module):
                 weighted_input_sum
             )
 
+        # Every genome node reaches the topological order (Kahn queues in-degree
+        # zero nodes too, and a cycle raises instead), and only inputs and bias
+        # are skipped above, so an output node always has an activation by now.
         output_columns_in_registration_order = [
-            node_activations_by_node_id.get(
-                output_node_id,
-                torch.zeros(batch_size, device=self._device_for_computation),
-            )
+            node_activations_by_node_id[output_node_id]
             for output_node_id in self._output_node_ids_in_registration_order
         ]
         output_tensor = torch.stack(output_columns_in_registration_order, dim=1)

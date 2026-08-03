@@ -156,9 +156,12 @@ class NEATAlgorithm:
         return CompositeNEATMutation(
             ordered_individual_mutations=[
                 WeightModificationMutation(
+                    probability_of_genome_weight_mutation=(
+                        config.probability_of_genome_weight_mutation
+                    ),
                     probability_of_perturbation=config.probability_of_weight_perturbation,
                     probability_of_replacement=config.probability_of_weight_replacement,
-                    perturbation_strength_sigma=config.weight_perturbation_strength_sigma,
+                    weight_perturbation_magnitude=config.weight_perturbation_magnitude,
                     initial_weight_range_min=config.initial_weight_range_min,
                     initial_weight_range_max=config.initial_weight_range_max,
                 ),
@@ -308,7 +311,7 @@ class NEATAlgorithm:
             elite_genomes_from_species = self._pick_elite_genomes_from_species(
                 member_genomes_in_species=member_genomes_in_species,
                 member_fitnesses_in_species=member_fitnesses_in_species,
-            )
+            )[: species_state.offspring_slot_count]
 
             offspring_genomes.extend(elite_genomes_from_species)
             offspring_species_ids.extend(
@@ -542,10 +545,10 @@ class NEATAlgorithm:
 
         The paper (section 4.1) carries over the champion of each species with
         *more than* five networks. Both the count and the size threshold are
-        configurable here, and the threshold is applied inclusively
+        configurable here; the threshold is applied inclusively
         (``len(members) >= minimum_species_size_for_elitism``), so the default of
-        5 also grants elitism to a species of exactly five - one member fewer
-        than the paper's rule. Set it to 6 to match the paper exactly.
+        6 reproduces the paper's rule exactly.
+
         """
         if len(member_genomes_in_species) < self.config.minimum_species_size_for_elitism:
             return []
@@ -602,17 +605,13 @@ class NEATAlgorithm:
         candidate_fitnesses: list[FitnessValue],
         rng: Generator,
     ) -> tuple[NEATGenome, FitnessValue]:
-        """Select one parent and return it together with its fitness."""
-        selected_parent_genome = self.parent_selection.select_parents(
+        selected_parent_index = self.parent_selection.select_parent_indices(
             candidate_genomes=candidate_genomes,
             candidate_fitnesses=candidate_fitnesses,
             number_of_parents_to_select=1,
             rng=rng,
         )[0]
-        selected_parent_fitness = candidate_fitnesses[
-            candidate_genomes.index(selected_parent_genome)
-        ]
-        return selected_parent_genome, selected_parent_fitness
+        return candidate_genomes[selected_parent_index], candidate_fitnesses[selected_parent_index]
 
     def _produce_single_child_from_species(
         self,

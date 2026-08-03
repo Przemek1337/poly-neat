@@ -34,27 +34,13 @@ class TournamentParentSelection(Generic[GenomeType]):
             )
         self._tournament_size = tournament_size
 
-    def select_parents(
+    def select_parent_indices(
         self,
         candidate_genomes: list[GenomeType],
         candidate_fitnesses: list[FitnessValue],
         number_of_parents_to_select: int,
         rng: Generator,
-    ) -> list[GenomeType]:
-        """Run one tournament per requested parent.
-
-        Args:
-            candidate_genomes: Pool to select from.
-            candidate_fitnesses: Fitness per candidate, aligned by index.
-            number_of_parents_to_select: How many parents to return.
-            rng: Source of randomness for tournament sampling.
-
-        Returns:
-            The selected parents (possibly with repeats).
-
-        Raises:
-            ValueError: If the pool is empty or the lists are misaligned.
-        """
+    ) -> list[int]:
         if len(candidate_genomes) != len(candidate_fitnesses):
             raise ValueError(
                 f"TournamentParentSelection: candidate_genomes has length "
@@ -64,7 +50,7 @@ class TournamentParentSelection(Generic[GenomeType]):
         if not candidate_genomes:
             raise ValueError("TournamentParentSelection: no candidate genomes given")
 
-        selected_parent_genomes: list[GenomeType] = []
+        selected_parent_indices: list[int] = []
         for _selection_step_index in range(number_of_parents_to_select):
             tournament_participant_indices = rng.integers(
                 low=0,
@@ -75,5 +61,22 @@ class TournamentParentSelection(Generic[GenomeType]):
                 tournament_participant_indices,
                 key=lambda participant_index: candidate_fitnesses[int(participant_index)],
             )
-            selected_parent_genomes.append(candidate_genomes[int(winner_index_in_population)])
-        return selected_parent_genomes
+            selected_parent_indices.append(int(winner_index_in_population))
+        return selected_parent_indices
+
+    def select_parents(
+        self,
+        candidate_genomes: list[GenomeType],
+        candidate_fitnesses: list[FitnessValue],
+        number_of_parents_to_select: int,
+        rng: Generator,
+    ) -> list[GenomeType]:
+        return [
+            candidate_genomes[selected_index]
+            for selected_index in self.select_parent_indices(
+                candidate_genomes=candidate_genomes,
+                candidate_fitnesses=candidate_fitnesses,
+                number_of_parents_to_select=number_of_parents_to_select,
+                rng=rng,
+            )
+        ]

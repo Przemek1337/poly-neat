@@ -13,6 +13,7 @@ device_for_phenotype_evaluation: cpu
 # Mutation rates
 probability_of_add_node_mutation: 0.03
 probability_of_add_connection_mutation: 0.05
+probability_of_genome_weight_mutation: 0.80
 probability_of_weight_perturbation: 0.90
 probability_of_weight_replacement: 0.10
 probability_of_toggle_connection_enabled: 0.01
@@ -20,7 +21,7 @@ probability_of_toggle_connection_enabled: 0.01
 # Weight initialization & perturbation
 initial_weight_range_min: -1.0
 initial_weight_range_max: 1.0
-weight_perturbation_strength_sigma: 0.4
+weight_perturbation_magnitude: 0.4
 
 # Speciation
 compatibility_distance_coefficient_excess_c1: 1.0
@@ -31,7 +32,7 @@ compatibility_distance_threshold: 3.0
 # Species lifecycle
 species_elitism_count: 1
 species_stagnation_generations_limit: 15
-minimum_species_size_for_elitism: 5
+minimum_species_size_for_elitism: 6
 
 # Crossover
 probability_of_crossover_vs_mutation_only: 0.75

@@ -19,6 +19,17 @@ class AddNodeMutation:
     the original connection's weight — chosen to minimize the initial impact
     of the mutation, so the new structure has time to be optimized instead of
     being selected away immediately.
+
+    The new node id and both new innovation ids are issued together by the
+    innovation tracker, keyed by the innovation id of the edge being split
+    (section 3.2). Numbering the node from the genome's own maximum would give
+    every genome of a minimal start the same new node id no matter which edge
+    it split, so unrelated structures would end up sharing historical markings.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Add-node mutation: section 3.1, Figure 3; historical markings: section 3.2.)
     """
 
     def __init__(
@@ -49,27 +60,20 @@ class AddNodeMutation:
             logger.debug("AddNodeMutation skipped: no enabled connections to split")
             return genome
 
-        connection_to_split_index = int(rng.integers(0, len(enabled_connection_genes)))
-        connection_to_split = enabled_connection_genes[connection_to_split_index]
+        connection_to_split = self._choose_connection_to_split(enabled_connection_genes, rng)
 
-        new_hidden_node_id = _pick_next_unused_node_id(genome)
+        (
+            new_hidden_node_id,
+            innovation_id_from_source_to_new_node,
+            innovation_id_from_new_node_to_target,
+        ) = innovation_tracker.get_or_assign_node_split(
+            split_connection_innovation_id=connection_to_split.innovation_id,
+            minimum_new_node_id=_pick_next_unused_node_id(genome),
+        )
         new_hidden_node_gene = NodeGene(
             node_id=new_hidden_node_id,
             node_type="hidden",
             activation_function_name=self._activation_function_name_for_new_hidden_node,
-        )
-
-        innovation_id_from_source_to_new_node = (
-            innovation_tracker.get_or_assign_innovation_id_for_connection(
-                source_node_id=connection_to_split.source_node_id,
-                target_node_id=new_hidden_node_id,
-            )
-        )
-        innovation_id_from_new_node_to_target = (
-            innovation_tracker.get_or_assign_innovation_id_for_connection(
-                source_node_id=new_hidden_node_id,
-                target_node_id=connection_to_split.target_node_id,
-            )
         )
 
         connection_source_to_new_node = ConnectionGene(
@@ -98,8 +102,31 @@ class AddNodeMutation:
 
         return NEATGenome(node_genes=updated_node_genes, connection_genes=updated_connection_genes)
 
+    def _choose_connection_to_split(
+        self,
+        enabled_connection_genes: list[ConnectionGene],
+        rng: Generator,
+    ) -> ConnectionGene:
+        """Pick which enabled connection gets split — uniformly at random.
+
+        Args:
+            enabled_connection_genes: The genome's enabled connections, in
+                genome order; never empty.
+            rng: Random generator threaded through the run.
+
+        Returns:
+            The connection the new hidden node is inserted into.
+        """
+        return enabled_connection_genes[int(rng.integers(0, len(enabled_connection_genes)))]
+
 
 def _pick_next_unused_node_id(genome: NEATGenome) -> int:
+    """Lowest node id free *within this genome*.
+
+    Only a lower bound for the tracker: it keeps a new node from colliding with
+    the genome's own nodes, while global uniqueness across genomes is the
+    tracker's job.
+    """
     highest_existing_node_id = max(node_gene.node_id for node_gene in genome.node_genes)
     return highest_existing_node_id + 1
 
