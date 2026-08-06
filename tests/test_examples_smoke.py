@@ -102,6 +102,12 @@ def _shrink_loaded_config(config: AlgorithmConfig) -> AlgorithmConfig:
         config.learning_interval_generations = 1
     if hasattr(config, "backpropagation_iterations_per_session"):
         config.backpropagation_iterations_per_session = 2
+    # EXACT trains every genome each generation; one epoch on the synthetic
+    # tensors keeps the smoke run fast.
+    if hasattr(config, "number_of_training_epochs_per_genome"):
+        config.number_of_training_epochs_per_genome = 1
+    if hasattr(config, "training_batch_size"):
+        config.training_batch_size = 16
     return config
 
 
