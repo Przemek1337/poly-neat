@@ -12,6 +12,7 @@ Implemented algorithms:
 | NEAT-DBM | `NEATDBMAlgorithm` | Recombines each child's weights from three donor genomes, differential-evolution style | Stanovov et al., 2021 |
 | C-NEAT | `CNEATAlgorithm` | Scores each organism on one class only and keeps a container of the best recognizer per class | Alfaham et al., 2024 |
 | L-NEAT | `LNEATAlgorithm` | Interleaves evolution with Lamarckian backpropagation sessions on a fixed learning subset | Chen & Alahakoon, 2006 |
+| EXACT | `EXACTAlgorithm` | Evolves CNN filter topologies — nodes are filters, edges are convolutions — training every genome by backpropagation before it is scored, and co-evolves the training hyperparameters | Desell, 2017 |
 
 ---
 
@@ -45,16 +46,17 @@ Examples live in `examples/<task>/<algorithm>.py`, each with a YAML config next 
 uv run python -m examples.xor.neat            # NEAT on XOR
 uv run python -m examples.iris.cneat          # C-NEAT on Iris
 uv run python -m examples.mnist.hyperneat     # HyperNEAT on down-pooled MNIST
+uv run python -m examples.mnist.exact         # EXACT on full-resolution MNIST
 ```
 
-All ten examples:
+All eleven examples:
 
-| Task | NEAT | FS-NEAT | HyperNEAT | NEAT-DBM | C-NEAT | L-NEAT |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| `xor` | ✓ | ✓ | ✓ | ✓ | | |
-| `iris` | | | | ✓ | ✓ | ✓ |
-| `mnist` | ✓ | | ✓ | | | |
-| `visual_discrimination` | | | ✓ | | | |
+| Task | NEAT | FS-NEAT | HyperNEAT | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `xor` | ✓ | ✓ | ✓ | ✓ | | | |
+| `iris` | | | | ✓ | ✓ | ✓ | |
+| `mnist` | ✓ | | ✓ | | | | ✓ |
+| `visual_discrimination` | | | ✓ | | | | |
 
 Artifacts — best genome as JSON and pickle, topology renders, TensorBoard event files — are written to `examples/<task>/artifacts/<algorithm>/`.
 
@@ -142,7 +144,8 @@ poly-neat/
 │   │   ├── hyperneat/           CPPN decoder, substrates, activation mutation
 │   │   ├── neatdbm/             difference-based weight mutation
 │   │   ├── cneat/               per-class containers and ensemble phenotype
-│   │   └── lneat/               backpropagation trainer, trainable phenotype
+│   │   ├── lneat/               backpropagation trainer, trainable phenotype
+│   │   └── exact/               CNN genome, eight operators, conv phenotype, SHO
 │   ├── nn/                      activation functions + topology utilities
 │   ├── evaluators/              fitness evaluators (sequential, parallel, per-task)
 │   ├── runner/                  evolution loop, callbacks, termination criteria
@@ -155,7 +158,7 @@ poly-neat/
 │   ├── _experiment.py           example contract + registry
 │   ├── xor/                     neat, fsneat, hyperneat, neatdbm
 │   ├── iris/                    cneat, lneat, neatdbm
-│   ├── mnist/                   neat, hyperneat
+│   ├── mnist/                   neat, hyperneat, exact
 │   └── visual_discrimination/   hyperneat
 ├── benchmarks/                  repeat-runner + results
 └── tests/
@@ -176,6 +179,7 @@ poly-neat/
 | `neatdbm/neatdbm_config.py` | `NEATDBMConfig(NEATConfig)` - difference-based mutation parameters. |
 | `cneat/cneat_config.py` | `CNEATConfig(NEATConfig)` - number of class labels for the container. |
 | `lneat/lneat_config.py` | `LNEATConfig(NEATConfig)` - learning interval, backpropagation session parameters, learning subset size. |
+| `exact/exact_config.py` | `EXACTConfig(NEATConfig)` - input image geometry, the eight operator probabilities, filter-size change options, crossover inclusion rates, the full backpropagation block (learning rate / momentum / weight decay with their per-epoch schedules, velocity reset ω, dropout, batch normalization) and the simplex hyperparameter optimization settings. |
 
 FS-NEAT has no config of its own; it runs on plain `NEATConfig`.
 
@@ -221,6 +225,7 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 | `neatdbm/` | `NEATDBMAlgorithm` - after standard reproduction, `DifferenceBasedWeightMutation` recombines each child's weights from three donors at shared innovation ids. |
 | `cneat/` | `CNEATAlgorithm` - organisms are scored on one assigned class; `ClassGenomeContainer` keeps the best recognizer per class; `ContainerEnsemblePhenotype` classifies by argmax over the container networks; `ContainerUpdateCallback` and `ContainerProgressLogger` maintain and report the container during the run. |
 | `lneat/` | `LNEATAlgorithm` - every `learning_interval_generations`, non-Type-1 offspring get a backpropagation session (`BackpropagationWeightTrainer`) on a fixed learning subset, and trained weights are inherited (Lamarckian). `TrainableTorchFeedForwardPhenotype` makes the phenotype's weights torch parameters; `RecognizerEnsemblePhenotype` assembles per-class recognizers into an argmax ensemble. |
+| `exact/` | `EXACTAlgorithm` - a CNN genome (`EXACTGenome`) whose nodes are filters and whose edges are convolutions, evolved by eight operators in `mutations/`. `EXACTInnovationTracker` keeps the master innovation list for the whole search; `EXACTCrossover` is fitness-asymmetric and discards children with an unreachable output; `TorchConvolutionalPhenotype` executes the CNN in one depth-ordered sweep with optional batch normalization and dropout; `EXACTBackpropagationTrainer` trains every untrained genome before it is scored and writes the kernels back (Lamarckian, with epigenetic weight initialization); `SimplexHyperparameterOptimizer` co-evolves each genome's eleven training hyperparameters. |
 
 ### `polyneat/nn/`
 
@@ -236,7 +241,7 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 | `sequential_evaluator_base.py` | `SequentialFitnessEvaluator` - base class for evaluating one phenotype at a time. Overriding `evaluate_single_phenotype` is enough. |
 | `parallel_evaluator_wrapper.py` | `ParallelFitnessEvaluatorWrapper` wraps any evaluator and evaluates in parallel via `joblib`. Defaults to `prefer="threads"`. |
 | `class_indexed_evaluator_base.py` | Base for evaluators that score an organism against one assigned class label, used by C-NEAT. |
-| `xor_evaluator.py` | `XORFitnessEvaluator` - evaluates a phenotype on the four XOR patterns. Fitness = Σ(1 − (expected − actual)²), max 4.0, solved threshold ≥ 3.95. |
+| `xor_evaluator.py` | `XORFitnessEvaluator` - evaluates a phenotype on the four XOR patterns. Fitness = Σ(1 - (expected - actual)²), max 4.0, solved threshold ≥ 3.95. |
 | `xor_with_distractors_evaluator.py` | XOR plus noise distractor inputs - the FS-NEAT feature-selection benchmark. |
 | `classification_accuracy_evaluator.py` | `ClassificationAccuracyEvaluator` - fraction of samples whose argmax output matches the label. |
 | `softmax_likelihood_evaluator.py` | `SoftmaxLikelihoodFitnessEvaluator` - mean softmax probability of the correct class; a smooth training signal for many-class problems. |
@@ -565,7 +570,7 @@ class MyNEAT(pn.NEATAlgorithm):
 
 ```bash
 uv sync                        # library + pytest
-uv run pytest                  # 233 tests
+uv run pytest                  # 356 tests
 uv pip install -e ".[dev]"     # ruff
 uv run ruff check polyneat examples tests
 uv run ruff format polyneat
@@ -581,5 +586,6 @@ uv run ruff format polyneat
 - Stanley, K. O., D'Ambrosio, D. B. & Gauci, J. (2009). **A Hypercube-Based Encoding for Evolving Large-Scale Neural Networks**. *Artificial Life*, 15(2), 185–212. DOI: 10.1162/artl.2009.15.2.15202
 - Stanovov, V., Akhmedova, Sh. & Semenkin, E. (2021). **Neuroevolution of augmented topologies with difference-based mutation**. *IOP Conference Series: Materials Science and Engineering*, 1047, 012075. DOI: 10.1088/1757-899X/1047/1/012075
 - Alfaham, A., Van Raemdonck, S. & Mercelis, S. (2024). **Genetic NEAT-Based Method for Multi-Class Classification**. *ACAI 2024: 7th International Conference on Algorithms, Computing and Artificial Intelligence*. DOI: 10.1109/ACAI63924.2024.10899662
+- Desell, T. (2017). **Developing a Volunteer Computing Project to Evolve Convolutional Neural Networks and Their Hyperparameters**. *2017 IEEE 13th International Conference on e-Science*, pp. 19–28. DOI: 10.1109/eScience.2017.14
 
 Every citation above is reproduced verbatim in the `References:` block of the corresponding module's docstring; the two sets are kept in sync deliberately.
