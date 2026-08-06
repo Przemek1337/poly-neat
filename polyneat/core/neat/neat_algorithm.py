@@ -143,12 +143,17 @@ class NEATAlgorithm:
             crossover=cls._build_crossover(config),
             parent_selection=cls._build_parent_selection(config),
             speciator=cls._build_speciator(config),
-            innovation_tracker=GlobalInnovationTracker(),
+            innovation_tracker=cls._build_innovation_tracker(config),
             _phenotype_decoder=cls._build_phenotype_decoder(config, resolved_device),
             initial_population_factory=resolve_initial_population_strategy_by_name(
                 config.initial_population_strategy
             ),
         )
+
+    @classmethod
+    def _build_innovation_tracker(cls, config: NEATConfig) -> GlobalInnovationTracker:
+        """Overridable factory for the innovation tracker."""
+        return GlobalInnovationTracker()
 
     @classmethod
     def _build_mutation(cls, config: NEATConfig) -> MutationOperator[NEATGenome]:
