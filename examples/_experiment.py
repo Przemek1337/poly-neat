@@ -37,6 +37,7 @@ EXAMPLE_REGISTRY: dict[str, str] = {
     "iris/cneat": "examples.iris.cneat",
     "iris/lneat": "examples.iris.lneat",
     "iris/neatdbm": "examples.iris.neatdbm",
+    "mnist/exact": "examples.mnist.exact",
     "mnist/hyperneat": "examples.mnist.hyperneat",
     "mnist/neat": "examples.mnist.neat",
     "visual_discrimination/hyperneat": "examples.visual_discrimination.hyperneat",

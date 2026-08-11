@@ -11,6 +11,37 @@ from polyneat.algorithms.cneat.cneat_algorithm import CNEATAlgorithm
 from polyneat.algorithms.cneat.container_ensemble_phenotype import ContainerEnsemblePhenotype
 from polyneat.algorithms.cneat.container_progress_logger import ContainerProgressLogger
 from polyneat.algorithms.cneat.container_update_callback import ContainerUpdateCallback
+from polyneat.algorithms.exact.exact_algorithm import EXACTAlgorithm
+from polyneat.algorithms.exact.exact_backpropagation_trainer import (
+    EXACTBackpropagationTrainer,
+)
+from polyneat.algorithms.exact.exact_crossover import EXACTCrossover
+from polyneat.algorithms.exact.exact_genome import (
+    ConvolutionEdgeGene,
+    EXACTGenome,
+    FilterNodeGene,
+    InvalidEXACTGenomeError,
+)
+from polyneat.algorithms.exact.exact_initial_population import (
+    build_minimal_cnn_initial_population,
+)
+from polyneat.algorithms.exact.exact_phenotype_decoder import EXACTPhenotypeDecoder
+from polyneat.algorithms.exact.exact_training_hyperparameters import (
+    EXACTTrainingHyperparameters,
+)
+from polyneat.algorithms.exact.mutations.add_convolution_node_mutation import (
+    AddConvolutionNodeMutation,
+)
+from polyneat.algorithms.exact.mutations.exact_composite_mutation import (
+    EXACTCompositeMutation,
+)
+from polyneat.algorithms.exact.simplex_hyperparameter_optimizer import (
+    SimplexHyperparameterOptimizer,
+)
+from polyneat.algorithms.exact.single_species_speciator import SingleSpeciesSpeciator
+from polyneat.algorithms.exact.torch_convolutional_phenotype import (
+    TorchConvolutionalPhenotype,
+)
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
@@ -43,6 +74,7 @@ from polyneat.algorithms.neatdbm.neatdbm_algorithm import NEATDBMAlgorithm
 from polyneat.configs.algorithm_config import AlgorithmConfig
 from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.exact.exact_config import EXACTConfig
 from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
 from polyneat.configs.lneat.lneat_config import LNEATConfig
 from polyneat.configs.neat.neat_config import NEATConfig
@@ -219,4 +251,21 @@ __all__ = [
     "NEATDBMConfig",
     "NEATDBMAlgorithm",
     "DifferenceBasedWeightMutation",
+    # EXACT algorithm
+    "EXACTConfig",
+    "EXACTAlgorithm",
+    "EXACTGenome",
+    "FilterNodeGene",
+    "ConvolutionEdgeGene",
+    "InvalidEXACTGenomeError",
+    "EXACTCrossover",
+    "EXACTCompositeMutation",
+    "AddConvolutionNodeMutation",
+    "SingleSpeciesSpeciator",
+    "EXACTPhenotypeDecoder",
+    "TorchConvolutionalPhenotype",
+    "EXACTBackpropagationTrainer",
+    "EXACTTrainingHyperparameters",
+    "SimplexHyperparameterOptimizer",
+    "build_minimal_cnn_initial_population",
 ]
