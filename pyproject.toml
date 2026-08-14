@@ -20,6 +20,34 @@ dependencies = [
 gymnasium = ["gymnasium>=0.29"]
 dev = ["ruff>=0.4"]
 
+# PyTorch z CUDA pobierany jest z indeksu PyTorcha, nie z PyPI: domyślne koło `torch`
+# z PyPI jest zbudowane bez CUDA, przez co `torch.cuda.is_available()` zwraca False
+# i ścieżka `--gpu` kończy się błędem.
+#
+# Docelowe środowisko to serwer z kartami NVIDIA L4, sterownik 570.86.10 (CUDA 12.8),
+# Python 3.11. Wybór indeksu cu126 dla tego zestawu:
+#
+#   indeks   torch cp311 / linux        uwagi
+#   cu126    do 2.13.0, w tym 2.12.1    runtime 12.6 < 12.8 sterownika — zgodność gwarantowana
+#   cu128    maksymalnie 2.11.0         dokładne trafienie w sterownik, ale cofa wersję torcha
+#   cu129    do 2.13.0                  runtime nowszy niż sterownik, tylko minor version compatibility
+#   cu130    do 2.13.0                  WYMAGA sterownika 580+, na 570.86.10 nie uruchomi się
+#
+# `nvidia-smi` raportuje maksymalną wersję CUDA obsługiwaną przez sterownik, a nie wymaganą,
+# więc build zbudowany pod starszy runtime działa na nowszym sterowniku. Odwrotny kierunek
+# nie jest bezpieczny — stąd odrzucenie cu130.
+#
+# Marker ogranicza indeks CUDA do Linuksa. Na stacjach roboczych (Windows/macOS) instaluje się
+# zwykłe koło z PyPI, więc `uv sync` do pracy nad kodem i testami nie ciągnie ~2.5 GB bibliotek
+# CUDA. Żeby mieć CUDA także lokalnie, wystarczy usunąć marker.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
