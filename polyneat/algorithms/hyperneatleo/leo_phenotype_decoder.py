@@ -44,11 +44,11 @@ def scale_leo_output_to_substrate_weight(
 class HyperNEATLEOPhenotypeDecoder:
     """Decode a substrate ANN from a CPPN with a link expression output.
 
-    For every candidate substrate connection the CPPN is queried once with the
-    two endpoints' coordinates *and their deltas*
-    ``(x1, y1, x2, y2, x1 - x2, y1 - y2)``. The deltas are explicit inputs
-    because a CPPN has no subtraction node, so a locality-based expression rule
-    could not otherwise be expressed at all.
+    For every candidate substrate connection the CPPN is queried once with the two
+    endpoints' coordinates ``(x1, y1, x2, y2)`` - the same four inputs plain
+    HyperNEAT uses. A coordinate *difference* needs no extra input: the locality
+    seed forms it inside the CPPN, by feeding an axis' two coordinates into a
+    Gaussian node through equal and opposite weights.
 
     The CPPN answers with two numbers. The first becomes the connection weight
     (linearly scaled, no cutoff); the second, the link expression output, decides
@@ -73,7 +73,8 @@ class HyperNEATLEOPhenotypeDecoder:
             cppn_phenotype_decoder: Decoder turning a CPPN genome into an
                 executable CPPN used to answer the coordinate queries.
             link_expression_threshold: A connection exists when the CPPN's link
-                expression output is strictly greater than this.
+                expression output reaches this value. The source's rule is
+                ``LEO >= 0``, so the comparison is inclusive.
             max_substrate_connection_weight_magnitude: Maximum substrate
                 connection magnitude.
             substrate_node_activation_function_name: Activation applied to hidden
@@ -139,8 +140,6 @@ class HyperNEATLEOPhenotypeDecoder:
                     source_node.y_coordinate,
                     target_node.x_coordinate,
                     target_node.y_coordinate,
-                    source_node.x_coordinate - target_node.x_coordinate,
-                    source_node.y_coordinate - target_node.y_coordinate,
                 ]
                 for source_node, target_node in candidate_pairs
             ],
@@ -160,7 +159,7 @@ class HyperNEATLEOPhenotypeDecoder:
         for (source_node, target_node), raw_weight, raw_expression in zip(
             candidate_pairs, raw_weight_values, raw_expression_values, strict=True
         ):
-            if raw_expression <= self._link_expression_threshold:
+            if raw_expression < self._link_expression_threshold:
                 continue
             substrate_connection_genes.append(
                 ConnectionGene(

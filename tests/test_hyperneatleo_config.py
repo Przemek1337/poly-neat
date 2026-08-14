@@ -1,25 +1,37 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from polyneat.configs.configuration_errors import ConfigurationError
-from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
+from polyneat.configs.hyperneat.hyperneat_config import (
+    CPPN_INPUT_NODE_COUNT,
+    HyperNEATConfig,
+)
 from polyneat.configs.hyperneatleo.hyperneatleo_config import (
     LEO_CPPN_INPUT_NODE_COUNT,
     LEO_CPPN_OUTPUT_NODE_COUNT,
     HyperNEATLEOConfig,
 )
 
+# Two clusters of four, tight enough that the seed cutoff falls in the gap.
 _RETINA_LAYERS = (
-    (-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00),
-    (-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00),
-    (-0.775, 0.775),
+    (-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0),
+    (-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0),
+    (-0.875, 0.875),
 )
 
 
-def test_defaults_describe_a_six_input_two_output_cppn() -> None:
+def test_cppn_keeps_hyperneats_four_coordinate_inputs() -> None:
+    # The locality seed forms coordinate differences from x1 and x2 through
+    # opposite-signed weights, so no separate delta input is needed.
+    assert LEO_CPPN_INPUT_NODE_COUNT == CPPN_INPUT_NODE_COUNT == 4
+
+
+def test_defaults_describe_a_four_input_two_output_cppn() -> None:
     config = HyperNEATLEOConfig()
-    assert config.number_of_input_nodes == LEO_CPPN_INPUT_NODE_COUNT == 6
+    assert config.number_of_input_nodes == 4
     assert config.number_of_output_nodes == LEO_CPPN_OUTPUT_NODE_COUNT == 2
     config.validate()
 
@@ -28,9 +40,9 @@ def test_leo_config_is_a_hyperneat_config() -> None:
     assert issubclass(HyperNEATLEOConfig, HyperNEATConfig)
 
 
-def test_four_input_cppn_is_rejected() -> None:
+def test_six_input_cppn_is_rejected() -> None:
     with pytest.raises(ConfigurationError) as raised:
-        HyperNEATLEOConfig(number_of_input_nodes=4)
+        HyperNEATLEOConfig(number_of_input_nodes=6)
     assert "number_of_input_nodes" in str(raised.value)
 
 
@@ -47,8 +59,6 @@ def test_substrate_validation_is_inherited() -> None:
 
 
 def test_explicitly_set_weight_expression_threshold_is_rejected() -> None:
-    # LEO replaces the magnitude threshold entirely; silently ignoring the field
-    # would violate the library's strict-config rule.
     with pytest.raises(ConfigurationError) as raised:
         HyperNEATLEOConfig(weight_expression_threshold=0.4)
     assert "link_expression_threshold" in str(raised.value)
@@ -71,15 +81,27 @@ def test_both_axes_are_accepted() -> None:
     HyperNEATLEOConfig(locality_seed_coordinate_axes=("x", "y")).validate()
 
 
-@pytest.mark.parametrize("bad_bias_weight", [0.0, 0.5, -1.0, -2.0])
-def test_seed_bias_weight_outside_the_open_unit_interval_is_rejected(
-    bad_bias_weight: float,
-) -> None:
-    # At b >= 0 exp(-x^2) + b is positive everywhere, so the seed expresses every
-    # connection; at b <= -1 it is non-positive everywhere and expresses none.
+def test_seed_defaults_follow_the_published_constants() -> None:
+    config = HyperNEATLEOConfig()
+    assert config.locality_seed_delta_weight == 0.6
+    assert config.locality_seed_bias_weight == -1.0
+    assert config.locality_seed_coordinate_axes == ("x",)
+
+
+@pytest.mark.parametrize("bad_bias_weight", [0.0, 0.5])
+def test_non_negative_seed_bias_weight_is_rejected(bad_bias_weight: float) -> None:
     with pytest.raises(ConfigurationError) as raised:
         HyperNEATLEOConfig(locality_seed_bias_weight=bad_bias_weight)
     assert "locality_seed_bias_weight" in str(raised.value)
+
+
+def test_gaussian_weight_not_exceeding_the_bias_is_rejected() -> None:
+    # The Gaussian peaks at 1.0, so g <= -b means the seed expresses nothing.
+    with pytest.raises(ConfigurationError) as raised:
+        HyperNEATLEOConfig(
+            locality_seed_gaussian_to_leo_weight=1.0, locality_seed_bias_weight=-1.0
+        )
+    assert "locality_seed_gaussian_to_leo_weight" in str(raised.value)
 
 
 def test_non_positive_seed_delta_weight_is_rejected() -> None:
@@ -88,26 +110,39 @@ def test_non_positive_seed_delta_weight_is_rejected() -> None:
     assert "locality_seed_delta_weight" in str(raised.value)
 
 
+def test_expression_cutoff_matches_the_closed_form() -> None:
+    config = HyperNEATLEOConfig()
+    expected = math.sqrt(math.log(2.0)) / 0.6
+    assert abs(config.locality_seed_expression_cutoff - expected) < 1e-12
+    assert abs(config.locality_seed_expression_cutoff - 1.3877) < 1e-3
+
+
+def test_expression_cutoff_scales_with_the_delta_weight() -> None:
+    narrow = HyperNEATLEOConfig(locality_seed_delta_weight=1.2)
+    wide = HyperNEATLEOConfig(locality_seed_delta_weight=0.3)
+    assert narrow.locality_seed_expression_cutoff < wide.locality_seed_expression_cutoff
+
+
+def test_retina_geometry_puts_the_cutoff_inside_the_hemisphere_gap() -> None:
+    # The property the whole experiment depends on.
+    config = HyperNEATLEOConfig(substrate_layer_x_coordinates=_RETINA_LAYERS)
+    xs = config.substrate_layer_x_coordinates[0]
+    within = [abs(a - b) for a in xs for b in xs if a * b > 0]
+    across = [abs(a - b) for a in xs for b in xs if a * b < 0]
+    assert max(within) < config.locality_seed_expression_cutoff < min(across)
+
+
 def test_explicit_layer_coordinates_replace_the_layer_size_checks() -> None:
-    # With explicit coordinates the layer-size fields are unused, so their
-    # values must stop being validated - otherwise a sensible explicit substrate
-    # could be rejected over a field nobody reads.
-    config = HyperNEATLEOConfig(
-        substrate_layer_x_coordinates=_RETINA_LAYERS,
-        substrate_input_layer_size=0,
-    )
-    config.validate()
+    HyperNEATLEOConfig(
+        substrate_layer_x_coordinates=_RETINA_LAYERS, substrate_input_layer_size=0
+    ).validate()
 
 
 def test_explicit_layer_coordinates_are_normalized_to_nested_tuples() -> None:
-    # AlgorithmConfig.from_dict only coerces top-level list -> tuple, and only
-    # for fields whose default is a tuple. This field defaults to None and is
-    # nested, so YAML would otherwise leave lists of lists behind.
     config = HyperNEATLEOConfig(
         substrate_layer_x_coordinates=[[-1.0, 1.0], [-0.5, 0.5]]  # type: ignore[arg-type]
     )
     assert config.substrate_layer_x_coordinates == ((-1.0, 1.0), (-0.5, 0.5))
-    assert isinstance(config.substrate_layer_x_coordinates, tuple)
     assert all(isinstance(layer, tuple) for layer in config.substrate_layer_x_coordinates)
 
 

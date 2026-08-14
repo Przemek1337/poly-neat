@@ -82,20 +82,25 @@ def test_large_weight_is_dropped_when_leo_is_negative() -> None:
     assert decoder.decode_substrate_genome(genome=None).connection_genes == ()
 
 
-def test_expression_uses_a_strict_threshold() -> None:
+def test_expression_threshold_is_inclusive() -> None:
+    # The source's rule is LEO >= 0, so a link sitting exactly on the threshold
+    # counts as expressed.
     decoder, _stub = _decoder(weight_output=1.0, leo_output=0.0)
+    assert len(decoder.decode_substrate_genome(genome=None).connection_genes) > 0
+
+
+def test_expression_rejects_values_below_the_threshold() -> None:
+    decoder, _stub = _decoder(weight_output=1.0, leo_output=-1e-6)
     assert decoder.decode_substrate_genome(genome=None).connection_genes == ()
 
 
-def test_cppn_is_queried_with_six_columns_and_correct_deltas() -> None:
+def test_cppn_is_queried_with_hyperneats_four_coordinate_columns() -> None:
+    # No delta columns: the locality seed builds the difference inside the CPPN,
+    # from x1 and x2 through opposite-signed weights.
     decoder, stub = _decoder(weight_output=1.0, leo_output=1.0)
     decoder.decode_substrate_genome(genome=None)
     assert stub.last_query_tensor is not None
-    query = stub.last_query_tensor
-    assert query.shape[1] == 6
-    x1, y1, x2, y2, dx, dy = query[0].tolist()
-    assert dx == x1 - x2
-    assert dy == y1 - y2
+    assert stub.last_query_tensor.shape[1] == 4
 
 
 def test_every_substrate_node_becomes_a_node_gene() -> None:

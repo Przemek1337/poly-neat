@@ -10,6 +10,7 @@ Implemented algorithms:
 | FS-NEAT | `FSNEATAlgorithm` | Starts each genome with a single random input connection, so evolution selects the relevant input features | Whiteson et al., 2005 |
 | FD-NEAT | `FDNEATAlgorithm` | Starts fully connected and deletes input connections, so evolution *deselects* the irrelevant features | Tan et al., 2012 |
 | HyperNEAT | `HyperNEATAlgorithm` | Evolves a CPPN that paints the weights of a fixed substrate as a function of geometry | Stanley, D'Ambrosio & Gauci, 2009 |
+| HyperNEAT-LEO | `HyperNEATLEOAlgorithm` | Gives the CPPN a second output deciding whether a connection is expressed at all, seeded toward local links so modular structure can emerge | Verbancsics & Stanley, 2011 |
 | NEAT-DBM | `NEATDBMAlgorithm` | Recombines each child's weights from three donor genomes, differential-evolution style | Stanovov et al., 2021 |
 | C-NEAT | `CNEATAlgorithm` | Scores each organism on one class only and keeps a container of the best recognizer per class | Alfaham et al., 2024 |
 | L-NEAT | `LNEATAlgorithm` | Interleaves evolution with Lamarckian backpropagation sessions on a fixed learning subset | Chen & Alahakoon, 2006 |
@@ -50,14 +51,15 @@ uv run python -m examples.mnist.hyperneat     # HyperNEAT on down-pooled MNIST
 uv run python -m examples.mnist.exact         # EXACT on full-resolution MNIST
 ```
 
-All twelve examples:
+All fourteen examples:
 
-| Task | NEAT | FS-NEAT | FD-NEAT | HyperNEAT | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `xor` | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
-| `iris` | | | | | ✓ | ✓ | ✓ | |
-| `mnist` | ✓ | | | ✓ | | | | ✓ |
-| `visual_discrimination` | | | | ✓ | | | | |
+| Task | NEAT | FS-NEAT | FD-NEAT | HyperNEAT | HyperNEAT-LEO | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `xor` | ✓ | ✓ | ✓ | ✓ | | ✓ | | | |
+| `iris` | | | | | | ✓ | ✓ | ✓ | |
+| `mnist` | ✓ | | | ✓ | | | | | ✓ |
+| `retina` | | | | ✓ | ✓ | | | | |
+| `visual_discrimination` | | | | ✓ | | | | | |
 
 Artifacts — best genome as JSON and pickle, topology renders, TensorBoard event files — are written to `examples/<task>/artifacts/<algorithm>/`.
 
@@ -223,7 +225,8 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 | `neat/` | Thin entry point: re-exports `NEATAlgorithm` from `polyneat/core/neat/`. |
 | `fsneat/` | `FSNEATAlgorithm(NEATAlgorithm)` overrides only `create_initial_population`; every genome starts with a single random input→output connection, so evolution itself selects the relevant input features. Any `initial_population_strategy` from YAML is deliberately ignored. |
 | `fdneat/` | `FDNEATAlgorithm(NEATAlgorithm)` overrides only `_build_mutation`, appending `DeleteInputConnectionMutation` to the standard four. The fully connected start is inherited unchanged — it *is* FD-NEAT's start, and evolution removes what does not earn its place. |
-| `hyperneat/` | `HyperNEATAlgorithm` evolves CPPNs; `substrate.py` builds substrates (`build_grid_sandwich_substrate` for two-sheet sandwiches, `build_layered_substrate` for the general case); `HyperNEATPhenotypeDecoder` queries the CPPN for every substrate connection and thresholds the result; `AddNodeWithRandomActivationMutation` gives new CPPN nodes a random activation from the configured set. |
+| `hyperneat/` | `HyperNEATAlgorithm` evolves CPPNs; `substrate.py` builds substrates (`build_grid_sandwich_substrate` for two-sheet sandwiches, `build_layered_substrate` for the general case, `build_substrate_from_explicit_layer_coordinates` when a task needs groups of nodes pushed apart); `HyperNEATPhenotypeDecoder` queries the CPPN for every substrate connection and thresholds the result, exposing the decoded substrate through `decode_substrate_genome`; `substrate_modularity.py` measures wiring locality and functional modularity of a decoded substrate; `AddNodeWithRandomActivationMutation` gives new CPPN nodes a random activation from the configured set. |
+| `hyperneatleo/` | `HyperNEATLEOAlgorithm(HyperNEATAlgorithm)` overrides only `_build_phenotype_decoder`. The CPPN keeps HyperNEAT's four coordinate inputs but gains a second output, the *link expression output*, which decides on its own whether a connection exists — so a weak-but-present connection becomes expressible, which classic HyperNEAT cannot represent. `leo_seeded_initial_population.py` seeds generation 0 toward local connections by feeding an axis' two coordinates into a Gaussian node through equal and opposite weights, so their sum is the coordinate difference. |
 | `neatdbm/` | `NEATDBMAlgorithm` - after standard reproduction, `DifferenceBasedWeightMutation` recombines each child's weights from three donors at shared innovation ids. |
 | `cneat/` | `CNEATAlgorithm` - organisms are scored on one assigned class; `ClassGenomeContainer` keeps the best recognizer per class; `ContainerEnsemblePhenotype` classifies by argmax over the container networks; `ContainerUpdateCallback` and `ContainerProgressLogger` maintain and report the container during the run. |
 | `lneat/` | `LNEATAlgorithm` - every `learning_interval_generations`, non-Type-1 offspring get a backpropagation session (`BackpropagationWeightTrainer`) on a fixed learning subset, and trained weights are inherited (Lamarckian). `TrainableTorchFeedForwardPhenotype` makes the phenotype's weights torch parameters; `RecognizerEnsemblePhenotype` assembles per-class recognizers into an argmax ensemble. |
@@ -514,6 +517,65 @@ and the full data with the exact configs that produced it is written to
 
 ---
 
+## Modularity: HyperNEAT against HyperNEAT-LEO
+
+The retina problem (Kashtan & Alon, 2005) is built from two independent
+sub-problems: an eight-pixel retina whose left and right halves each may contain
+an "object", where the left answer depends on no right-hand pixel and vice versa.
+A network keeping its halves separate loses nothing; one wiring them together
+pays for connections it cannot use. That makes it the natural test of LEO's
+claim, and both `examples/retina/hyperneat.py` and `examples/retina/leo.py` run
+it through the same code (`examples/retina/_shared.py`), so only the algorithm
+differs.
+
+Two metrics are reported, and the distinction matters:
+
+- **`number_of_cross_hemisphere_connections`** — wiring locality: connections whose
+  endpoints sit on opposite sides of `x = 0`. This is what the locality seed
+  directly controls.
+- **`number_of_cross_hemisphere_input_dependencies`** — functional modularity: pairs
+  of (output, opposite-side input) joined by an enabled path, out of 8. **This is
+  what the modularity claim is actually about.** A hidden node's side is
+  arbitrary, so a network routing left inputs through right-side hidden nodes into
+  the left output never mixes left and right information — perfectly modular, yet
+  every one of its connections looks like a crossing to the first metric.
+
+Single run, seed 42, 1500 generations, identical configuration apart from what
+separates the two algorithms:
+
+| Variant | Fitness (max 256) | Expressed links | Crossing links | Crossing dependencies |
+|---|---:|---:|---:|---:|
+| HyperNEAT-LEO | **211.95** | 25 | **0 (0%)** | **0 / 8** |
+| HyperNEAT | 201.55 | 52 | 29 (56%) | 7 / 8 |
+
+LEO comes out perfectly modular on both measures and ahead on fitness; the
+baseline is almost entirely non-modular and barely above the 192.0 a
+constant-output network scores.
+
+**Read these numbers with three caveats.**
+
+1. **One seed.** A multi-seed benchmark has not been run.
+2. **The budget is far short of the literature.** Huizinga et al. (2014) run
+   25,000–50,000 generations and report that the medians of all treatments reach
+   perfect performance; differences become significant only after ~12,000. At
+   1500 generations neither variant here comes close to 256, which is a property
+   of the budget, not of the methods. A trajectory probe shows LEO flat at ~208
+   through generation 300, then climbing to ~230 by 1500, while the baseline is
+   flat throughout (192.6 → 199.3).
+3. **The locality seed's advantage may be transient.** The same paper reports that
+   seeded modularity "spikes during the first few generations, but then decreases
+   over time", and notes that perfect-performing *non-modular* solutions to this
+   task exist.
+
+Provenance is recorded in
+[`docs/superpowers/specs/2026-08-14-hyperneat-leo-design.md`](docs/superpowers/specs/2026-08-14-hyperneat-leo-design.md):
+the task definition is verified against Kashtan & Alon, the seed constants come
+from Huizinga et al., the Gaussian-to-LEO weight is stated by neither source, and
+the substrate geometry plus the two-output form of the task are this
+implementation's own choices.
+
+---
+
 ## Using the library
 
 ### Logging
@@ -623,6 +685,9 @@ uv run ruff format polyneat
 - Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R. & Kohl, N. (2005). **Automatic Feature Selection in Neuroevolution**. *GECCO 2005: Proceedings of the Genetic and Evolutionary Computation Conference*, pp. 1225–1232.
 - Tan, M., Deklerck, R., Jansen, B. & Cornelis, J. (2012). **Analysis of a Feature-Deselective Neuroevolution Classifier (FD-NEAT) in a Computer-Aided Lung Nodule Detection System for CT Images**. *GECCO '12 Companion: Proceedings of the 14th Annual Conference Companion on Genetic and Evolutionary Computation*, pp. 539–546. DOI: 10.1145/2330784.2330869
 - Stanley, K. O., D'Ambrosio, D. B. & Gauci, J. (2009). **A Hypercube-Based Encoding for Evolving Large-Scale Neural Networks**. *Artificial Life*, 15(2), 185–212. DOI: 10.1162/artl.2009.15.2.15202
+- Verbancsics, P. & Stanley, K. O. (2011). **Constraining Connectivity to Encourage Modularity in HyperNEAT**. *GECCO '11: Proceedings of the 13th Annual Conference on Genetic and Evolutionary Computation*, pp. 1483–1490. DOI: 10.1145/2001576.2001776
+- Kashtan, N. & Alon, U. (2005). **Spontaneous evolution of modularity and network motifs**. *Proceedings of the National Academy of Sciences*, 102(39), 13773–13778. DOI: 10.1073/pnas.0503610102
+- Huizinga, J., Mouret, J.-B. & Clune, J. (2014). **Evolving Neural Networks That Are Both Modular and Regular: HyperNeat Plus the Connection Cost Technique**. *GECCO '14*, pp. 697–704. DOI: 10.1145/2576768.2598232 — not implemented here; it is the source of the locality-seed constants, since it reimplements HyperNEAT-LEO as one of its treatments and the 2011 paper was not obtainable.
 - Stanovov, V., Akhmedova, Sh. & Semenkin, E. (2021). **Neuroevolution of augmented topologies with difference-based mutation**. *IOP Conference Series: Materials Science and Engineering*, 1047, 012075. DOI: 10.1088/1757-899X/1047/1/012075
 - Alfaham, A., Van Raemdonck, S. & Mercelis, S. (2024). **Genetic NEAT-Based Method for Multi-Class Classification**. *ACAI 2024: 7th International Conference on Algorithms, Computing and Artificial Intelligence*. DOI: 10.1109/ACAI63924.2024.10899662
 - Desell, T. (2017). **Developing a Volunteer Computing Project to Evolve Convolutional Neural Networks and Their Hyperparameters**. *2017 IEEE 13th International Conference on e-Science*, pp. 19–28. DOI: 10.1109/eScience.2017.14

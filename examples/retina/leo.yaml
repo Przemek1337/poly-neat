@@ -8,8 +8,11 @@
 # GEOMETRIA SUBSTRATU — przerwa między półkulami jest KONIECZNA.
 # Przy równomiernym rozkładzie ośmiu węzłów na [-1, 1] odległości wewnątrz
 # półkuli sięgają 0.857, a między półkulami zaczynają się od 0.286: zakresy się
-# nakładają i żaden próg lokalności ich nie rozdzieli. Tutaj wewnątrz <= 0.45,
-# między >= 1.10, a próg zaszczepienia leży na 0.833 — czysto pomiędzy.
+# nakładają i żaden próg lokalności ich nie rozdzieli.
+#
+# Przy stałych zaszczepienia ze źródła (w=0.6, g=2.0, b=-1) próg wypada na
+# sqrt(ln 2)/0.6 = 1.388. Skupiska ±0.75…±1.0 dają wewnątrz <= 0.25,
+# a między >= 1.50 — próg leży czysto pomiędzy.
 #
 # Kolejność pikseli w warstwie wejściowej, za docstringiem RetinaProblemEvaluator:
 #   0,1 = lewa kolumna zewnętrzna lewego bloku (góra, dół)
@@ -19,7 +22,7 @@
 # Dzięki temu współrzędna x niesie strukturę kolumn, którą reguła zadania czyta.
 
 population_size: 150
-number_of_input_nodes: 6      # x1, y1, x2, y2, dx, dy
+number_of_input_nodes: 4      # x1, y1, x2, y2 — jak w zwykłym HyperNEAT
 number_of_output_nodes: 2     # waga, LEO
 random_seed: 42
 device_for_phenotype_evaluation: cpu
@@ -27,9 +30,9 @@ device_for_phenotype_evaluation: cpu
 initial_population_strategy: leo_seeded
 
 substrate_layer_x_coordinates:
-  - [-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00]
-  - [-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00]
-  - [-0.775, 0.775]
+  - [-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0]
+  - [-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0]
+  - [-0.875, 0.875]
 substrate_bias_x_coordinate: 0.0
 substrate_coordinate_range_min: -1.0
 substrate_coordinate_range_max: 1.0
@@ -38,11 +41,20 @@ substrate_node_activation_function: steepened_sigmoid
 max_substrate_connection_weight_magnitude: 3.0
 
 # Reguła ekspresji i zaszczepienie lokalnością.
-# LEO = exp(-(w*dx)^2) + b, wyrażone dla |dx| < sqrt(ln(-1/b)) / w = 0.833.
+#   LEO = tanh(g * exp(-(w * d)^2) + b),  wyrażone gdy LEO >= 0,
+#   czyli gdy |d| <= sqrt(ln(g / -b)) / w = 1.388
+# gdzie d to różnica współrzędnych x, liczona WEWNĄTRZ CPPN-a przez podanie x1
+# i x2 do węzła gaussowskiego z wagami -w i +w. Dlatego CPPN nie potrzebuje
+# osobnego wejścia na deltę i zostaje przy czterech wejściach HyperNEAT-a.
+#
+# w = 0.6 i b = -1 pochodzą z Huizinga i in. (2014), sekcja 2.1, gdzie LEO
+# z zaszczepieniem gaussowskim jest jednym z porównywanych wariantów.
+# g nie jest w źródle podane — 2.0 stawia próg na połowie wysokości gaussianu.
 link_expression_threshold: 0.0
 locality_seed_coordinate_axes: ["x"]
-locality_seed_delta_weight: 1.0
-locality_seed_bias_weight: -0.5
+locality_seed_delta_weight: 0.6
+locality_seed_gaussian_to_leo_weight: 2.0
+locality_seed_bias_weight: -1.0
 
 # Genetyka CPPN
 initial_weight_range_min: -3.0

@@ -14,14 +14,14 @@ from polyneat.algorithms.hyperneatleo.leo_phenotype_decoder import (
 from polyneat.configs.hyperneatleo.hyperneatleo_config import HyperNEATLEOConfig
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 
-_RETINA_X = (-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00)
+_RETINA_X = (-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0)
 
 
 def _config(**overrides) -> HyperNEATLEOConfig:
     base = {
         "population_size": 6,
         "random_seed": 0,
-        "substrate_layer_x_coordinates": (_RETINA_X, _RETINA_X, (-0.775, 0.775)),
+        "substrate_layer_x_coordinates": (_RETINA_X, _RETINA_X, (-0.875, 0.875)),
     }
     base.update(overrides)
     return HyperNEATLEOConfig(**base)

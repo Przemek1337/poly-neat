@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import torch
 
@@ -21,12 +19,14 @@ from polyneat.core.neat.initial_population import (
 )
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 
-_WEIGHT_OUTPUT_NODE_ID = 7
-_LEO_OUTPUT_NODE_ID = 8
-_DELTA_X_INPUT_NODE_ID = 4
-_BIAS_NODE_ID = 6
+# inputs 0..3 = x1, y1, x2, y2 | bias 4 | outputs 5 = weight, 6 = LEO | gaussians from 7
+_X1_INPUT_NODE_ID = 0
+_X2_INPUT_NODE_ID = 2
+_BIAS_NODE_ID = 4
+_WEIGHT_OUTPUT_NODE_ID = 5
+_LEO_OUTPUT_NODE_ID = 6
 
-_RETINA_X = (-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00)
+_RETINA_X = (-1.0, -0.9167, -0.8333, -0.75, 0.75, 0.8333, 0.9167, 1.0)
 
 
 def _population(population_size: int = 6, **config_overrides):
@@ -53,20 +53,27 @@ def test_generation_number_is_zero() -> None:
     assert _population().generation_number == 0
 
 
-def test_every_genome_has_a_gaussian_node_fed_by_delta_x() -> None:
+def test_gaussian_node_receives_both_x_coordinates_with_opposite_weights() -> None:
+    # This is what makes a separate delta input unnecessary: the weighted sum
+    # entering the Gaussian already is w * (x2 - x1).
     for genome in _population().genomes:
         gaussian_node_ids = {
             node.node_id
             for node in genome.node_genes
             if node.activation_function_name == "gaussian"
         }
-        assert gaussian_node_ids, "no gaussian node in the seed"
-        fed_by_delta_x = {
-            connection.target_node_id
+        assert len(gaussian_node_ids) == 1
+        gaussian_node_id = next(iter(gaussian_node_ids))
+
+        into_gaussian = {
+            connection.source_node_id: connection.weight
             for connection in genome.connection_genes
-            if connection.source_node_id == _DELTA_X_INPUT_NODE_ID and connection.is_enabled
+            if connection.target_node_id == gaussian_node_id and connection.is_enabled
         }
-        assert gaussian_node_ids & fed_by_delta_x
+        assert set(into_gaussian) == {_X1_INPUT_NODE_ID, _X2_INPUT_NODE_ID}
+        assert into_gaussian[_X1_INPUT_NODE_ID] == -0.6
+        assert into_gaussian[_X2_INPUT_NODE_ID] == 0.6
+        assert into_gaussian[_X1_INPUT_NODE_ID] == -into_gaussian[_X2_INPUT_NODE_ID]
 
 
 def test_gaussian_node_and_bias_both_feed_the_leo_output() -> None:
@@ -76,18 +83,28 @@ def test_gaussian_node_and_bias_both_feed_the_leo_output() -> None:
             for node in genome.node_genes
             if node.activation_function_name == "gaussian"
         }
-        sources_into_leo = {
-            connection.source_node_id
+        into_leo = {
+            connection.source_node_id: connection.weight
             for connection in genome.connection_genes
             if connection.target_node_id == _LEO_OUTPUT_NODE_ID and connection.is_enabled
         }
-        assert gaussian_node_ids <= sources_into_leo
-        assert _BIAS_NODE_ID in sources_into_leo
+        assert gaussian_node_ids <= set(into_leo)
+        assert into_leo[_BIAS_NODE_ID] == -1.0
+        for gaussian_node_id in gaussian_node_ids:
+            assert into_leo[gaussian_node_id] == 2.0
 
 
-def test_delta_inputs_do_not_feed_the_weight_output() -> None:
-    # The weight function starts identical to plain HyperNEAT's; wiring the
-    # deltas into it is left to evolution.
+def test_leo_output_uses_a_hyperbolic_tangent() -> None:
+    # The smooth stand-in for the original's step function; "expressed" is then a
+    # sign test on the pre-activation.
+    for genome in _population().genomes:
+        leo_node = next(
+            node for node in genome.node_genes if node.node_id == _LEO_OUTPUT_NODE_ID
+        )
+        assert leo_node.activation_function_name == "tanh"
+
+
+def test_weight_output_is_wired_like_a_plain_hyperneat_cppn() -> None:
     for genome in _population().genomes:
         sources_into_weight = {
             connection.source_node_id
@@ -97,29 +114,26 @@ def test_delta_inputs_do_not_feed_the_weight_output() -> None:
         assert sources_into_weight == {0, 1, 2, 3, _BIAS_NODE_ID}
 
 
-def test_bias_into_leo_carries_the_configured_negative_weight() -> None:
-    population = _population(population_size=3, locality_seed_bias_weight=-0.25)
+def test_seed_constants_are_configurable() -> None:
+    population = _population(
+        population_size=3,
+        locality_seed_delta_weight=0.9,
+        locality_seed_gaussian_to_leo_weight=3.0,
+        locality_seed_bias_weight=-1.5,
+    )
     for genome in population.genomes:
-        bias_into_leo = [
-            connection
-            for connection in genome.connection_genes
-            if connection.source_node_id == _BIAS_NODE_ID
-            and connection.target_node_id == _LEO_OUTPUT_NODE_ID
-        ]
-        assert len(bias_into_leo) == 1
-        assert bias_into_leo[0].weight == -0.25
-
-
-def test_delta_into_gaussian_carries_the_configured_delta_weight() -> None:
-    population = _population(population_size=3, locality_seed_delta_weight=2.5)
-    for genome in population.genomes:
-        delta_edges = [
-            connection
-            for connection in genome.connection_genes
-            if connection.source_node_id == _DELTA_X_INPUT_NODE_ID
-        ]
-        assert len(delta_edges) == 1
-        assert delta_edges[0].weight == 2.5
+        weight_by_edge = {
+            (c.source_node_id, c.target_node_id): c.weight for c in genome.connection_genes
+        }
+        gaussian_node_id = next(
+            node.node_id
+            for node in genome.node_genes
+            if node.activation_function_name == "gaussian"
+        )
+        assert weight_by_edge[(_X1_INPUT_NODE_ID, gaussian_node_id)] == -0.9
+        assert weight_by_edge[(_X2_INPUT_NODE_ID, gaussian_node_id)] == 0.9
+        assert weight_by_edge[(gaussian_node_id, _LEO_OUTPUT_NODE_ID)] == 3.0
+        assert weight_by_edge[(_BIAS_NODE_ID, _LEO_OUTPUT_NODE_ID)] == -1.5
 
 
 def test_seeding_both_axes_adds_two_gaussian_nodes() -> None:
@@ -132,8 +146,6 @@ def test_seeding_both_axes_adds_two_gaussian_nodes() -> None:
 
 
 def test_all_genomes_share_the_seed_innovation_ids() -> None:
-    # Historical markings must align across generation 0, or crossover cannot
-    # match the identical seed structure.
     genomes = _population(population_size=5).genomes
     seed_edges_per_genome = [
         {
@@ -157,17 +169,9 @@ def test_genomes_differ_in_their_weight_output_wiring_weights() -> None:
     assert len(set(weight_output_weights)) > 1
 
 
-def test_seed_threshold_matches_the_documented_formula() -> None:
-    config = HyperNEATLEOConfig(locality_seed_delta_weight=1.0, locality_seed_bias_weight=-0.5)
-    expected_cutoff = math.sqrt(
-        math.log(-1.0 / config.locality_seed_bias_weight)
-    ) / config.locality_seed_delta_weight
-    assert abs(expected_cutoff - 0.8326) < 1e-3
-
-
 def _retina_decoder(config: HyperNEATLEOConfig) -> HyperNEATLEOPhenotypeDecoder:
     substrate = build_substrate_from_explicit_layer_coordinates(
-        layer_x_coordinates=(_RETINA_X, _RETINA_X, (-0.775, 0.775)),
+        layer_x_coordinates=(_RETINA_X, _RETINA_X, (-0.875, 0.875)),
         coordinate_range_min=-1.0,
         coordinate_range_max=1.0,
         bias_x_coordinate=0.0,
@@ -217,9 +221,7 @@ def test_decoded_generation_zero_still_connects_each_hemisphere_to_its_output() 
         decoded = decoder.decode_substrate_genome(genome)
         for output_node_id in output_node_ids:
             incoming = [
-                gene
-                for gene in decoded.connection_genes
-                if gene.target_node_id == output_node_id
+                gene for gene in decoded.connection_genes if gene.target_node_id == output_node_id
             ]
             assert incoming, "an output ended up with no incoming connection at all"
             assert all(
