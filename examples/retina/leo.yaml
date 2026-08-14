@@ -1,0 +1,76 @@
+# PolyNEAT – HyperNEAT-LEO na problemie siatkówki
+#
+# Zadanie jest modularne z definicji: odpowiedź "obiekt po lewej" nie zależy od
+# żadnego piksela po prawej (Kashtan & Alon, 2005). LEO zaszczepia lokalność,
+# więc pokolenie 0 składa się z dwóch rozłącznych półkul, każdej ze swoim
+# wyjściem (Verbancsics & Stanley, 2011).
+#
+# GEOMETRIA SUBSTRATU — przerwa między półkulami jest KONIECZNA.
+# Przy równomiernym rozkładzie ośmiu węzłów na [-1, 1] odległości wewnątrz
+# półkuli sięgają 0.857, a między półkulami zaczynają się od 0.286: zakresy się
+# nakładają i żaden próg lokalności ich nie rozdzieli. Tutaj wewnątrz <= 0.45,
+# między >= 1.10, a próg zaszczepienia leży na 0.833 — czysto pomiędzy.
+#
+# Kolejność pikseli w warstwie wejściowej, za docstringiem RetinaProblemEvaluator:
+#   0,1 = lewa kolumna zewnętrzna lewego bloku (góra, dół)
+#   2,3 = kolumna wewnętrzna lewego bloku
+#   4,5 = kolumna wewnętrzna prawego bloku
+#   6,7 = prawa kolumna zewnętrzna prawego bloku
+# Dzięki temu współrzędna x niesie strukturę kolumn, którą reguła zadania czyta.
+
+population_size: 150
+number_of_input_nodes: 6      # x1, y1, x2, y2, dx, dy
+number_of_output_nodes: 2     # waga, LEO
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+initial_population_strategy: leo_seeded
+
+substrate_layer_x_coordinates:
+  - [-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00]
+  - [-1.00, -0.85, -0.70, -0.55, 0.55, 0.70, 0.85, 1.00]
+  - [-0.775, 0.775]
+substrate_bias_x_coordinate: 0.0
+substrate_coordinate_range_min: -1.0
+substrate_coordinate_range_max: 1.0
+include_substrate_bias_node: true
+substrate_node_activation_function: steepened_sigmoid
+max_substrate_connection_weight_magnitude: 3.0
+
+# Reguła ekspresji i zaszczepienie lokalnością.
+# LEO = exp(-(w*dx)^2) + b, wyrażone dla |dx| < sqrt(ln(-1/b)) / w = 0.833.
+link_expression_threshold: 0.0
+locality_seed_coordinate_axes: ["x"]
+locality_seed_delta_weight: 1.0
+locality_seed_bias_weight: -0.5
+
+# Genetyka CPPN
+initial_weight_range_min: -3.0
+initial_weight_range_max: 3.0
+probability_of_add_node_mutation: 0.03
+probability_of_add_connection_mutation: 0.05
+probability_of_genome_weight_mutation: 0.80
+probability_of_weight_perturbation: 0.90
+probability_of_weight_replacement: 0.10
+probability_of_toggle_connection_enabled: 0.01
+weight_perturbation_magnitude: 0.5
+
+available_activation_functions: ["sigmoid", "gaussian", "sine", "absolute_value", "identity"]
+default_activation_function_for_hidden_nodes: sigmoid
+default_activation_function_for_output_nodes: identity
+
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+species_elitism_count: 1
+species_stagnation_generations_limit: 15
+minimum_species_size_for_elitism: 6
+
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
+probability_of_interspecies_mating: 0.001
+
+tournament_size_for_parent_selection: 3
+species_survival_fraction_for_reproduction: 0.2

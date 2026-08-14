@@ -1,0 +1,60 @@
+# PolyNEAT – zwykły HyperNEAT na problemie siatkówki (linia odniesienia dla LEO)
+#
+# Każdy parametr genetyki CPPN jest IDENTYCZNY jak w leo.yaml — różnice sprowadzają
+# się wyłącznie do tego, czym HyperNEAT różni się od HyperNEAT-LEO:
+#   * CPPN ma 4 wejścia (x1, y1, x2, y2) i 1 wyjście (waga), bez delt i bez LEO,
+#   * o istnieniu połączenia decyduje magnituda wagi, nie osobne wyjście,
+#   * populacja startowa jest zwykła, bez zaszczepionej lokalności,
+#   * substrat opisany rozmiarami warstw, więc węzły rozkładają się RÓWNOMIERNIE.
+#
+# Ten ostatni punkt jest celowy: linia odniesienia ma pokazać, co robi HyperNEAT
+# bez żadnej pomocy geometrycznej. HyperNEATConfig nie zna jawnych współrzędnych.
+
+population_size: 150
+number_of_input_nodes: 4      # x1, y1, x2, y2
+number_of_output_nodes: 1     # waga
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+initial_population_strategy: fully_connected
+
+substrate_input_layer_size: 8
+substrate_hidden_layer_sizes: [8]
+substrate_output_layer_size: 2
+substrate_coordinate_range_min: -1.0
+substrate_coordinate_range_max: 1.0
+include_substrate_bias_node: true
+substrate_node_activation_function: steepened_sigmoid
+weight_expression_threshold: 0.2
+max_substrate_connection_weight_magnitude: 3.0
+
+# Genetyka CPPN — identyczna z leo.yaml
+initial_weight_range_min: -3.0
+initial_weight_range_max: 3.0
+probability_of_add_node_mutation: 0.03
+probability_of_add_connection_mutation: 0.05
+probability_of_genome_weight_mutation: 0.80
+probability_of_weight_perturbation: 0.90
+probability_of_weight_replacement: 0.10
+probability_of_toggle_connection_enabled: 0.01
+weight_perturbation_magnitude: 0.5
+
+available_activation_functions: ["sigmoid", "gaussian", "sine", "absolute_value", "identity"]
+default_activation_function_for_hidden_nodes: sigmoid
+default_activation_function_for_output_nodes: identity
+
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+species_elitism_count: 1
+species_stagnation_generations_limit: 15
+minimum_species_size_for_elitism: 6
+
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
+probability_of_interspecies_mating: 0.001
+
+tournament_size_for_parent_selection: 3
+species_survival_fraction_for_reproduction: 0.2
