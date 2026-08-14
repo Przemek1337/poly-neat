@@ -1,18 +1,18 @@
-"""FS-NEAT on XOR with distractor inputs - automatic feature selection demo.
+"""FD-NEAT on XOR with distractor inputs - automatic feature *de*selection demo.
 
-The task is the scenario from Whiteson et al. (2005): the four XOR patterns
-are padded with pure-noise distractor columns, so only 2 of the 8 inputs carry
-signal. FS-NEAT starts every genome with a *single* random input->output
-connection instead of a fully connected layer; evolution has to discover both
-the XOR topology and which inputs are worth connecting at all.
+The counterpart of ``examples/xor/fsneat.py``: identical data, identical fitness
+function, identical generation budget. FS-NEAT starts from a single random input
+connection and adds the inputs that pay off; FD-NEAT starts fully connected and
+deletes the ones that do not (Tan et al., 2012).
 
-At the end the script reports which input features the best network uses,
-making the feature selection visible.
+Both examples report ``number_of_connected_input_features`` computed by the same
+library function, so the two strategies are directly comparable. The ideal
+result is 2 - only the real XOR inputs left with a path to the output.
 
 Run from the repository root:
-    uv run python -m examples.xor.fsneat [--cpu | --gpu]
+    uv run python -m examples.xor.fdneat [--cpu | --gpu]
 
-Artifacts are written to examples/xor/artifacts/fsneat/:
+Artifacts are written to examples/xor/artifacts/fdneat/:
     best_genome.json        - best genome of the run (JSON)
     best_genome.pkl         - best genome of the run (pickle)
     topology/final_best.svg - topology render of the final best genome
@@ -31,8 +31,8 @@ from examples._experiment import ExperimentReport, print_experiment_report
 from polyneat.evaluators.xor_with_distractors_evaluator import XORWithDistractorsEvaluator
 from polyneat.nn.topology_utilities import find_node_ids_with_enabled_path_to_any_target
 
-CONFIG_FILE_PATH = Path(__file__).parent / "fsneat.yaml"
-_ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "fsneat"
+CONFIG_FILE_PATH = Path(__file__).parent / "fdneat.yaml"
+_ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "fdneat"
 
 _TARGET_FITNESS = 3.95
 _MAX_GENERATION_NUMBER = 500
@@ -45,7 +45,7 @@ def _input_node_ids_used_by(
 
     Reachability, not merely an outgoing connection: an input wired into a
     hidden node that leads nowhere is not a feature the network uses. The same
-    library function backs ``examples/xor/fdneat.py``, so the two feature
+    library function backs ``examples/xor/fsneat.py``, so the two feature
     selection strategies are measured identically and can be compared.
 
     Node ids follow the generation-0 layout: inputs ``0 .. n-1``, bias ``n``,
@@ -69,7 +69,7 @@ def run_experiment(
     random_seed: int | None = None,
     artifacts_directory: Path | None = None,
 ) -> ExperimentReport:
-    """Run the full XOR FS-NEAT experiment once.
+    """Run the full XOR FD-NEAT experiment once.
 
     Args:
         device: Phenotype evaluation device; ``None`` uses the yaml value.
@@ -77,10 +77,11 @@ def run_experiment(
         artifacts_directory: Where to write artifacts; ``None`` writes none.
 
     Returns:
-        The run's fitness, generation count and runtime.
+        The run's fitness, surviving input-feature count, generation count and
+        runtime.
     """
-    config = pn.NEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
-    algorithm = pn.FSNEATAlgorithm.from_config(config, device_for_phenotype_computation=device)
+    config = pn.FDNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
+    algorithm = pn.FDNEATAlgorithm.from_config(config, device_for_phenotype_computation=device)
 
     callbacks: list = [pn.ConsoleStatisticsLogger()]
     if artifacts_directory is not None:
@@ -113,6 +114,10 @@ def run_experiment(
     print(
         f"Inputs used : {used_inputs} "
         f"(relevant inputs are 0 and 1; 2..{config.number_of_input_nodes - 1} are noise)"
+    )
+    print(
+        f"Deselected  : {config.number_of_input_nodes - len(used_inputs)} of "
+        f"{config.number_of_input_nodes} inputs"
     )
     return ExperimentReport(
         metric_values={

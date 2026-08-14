@@ -41,6 +41,7 @@ EXAMPLE_REGISTRY: dict[str, str] = {
     "mnist/hyperneat": "examples.mnist.hyperneat",
     "mnist/neat": "examples.mnist.neat",
     "visual_discrimination/hyperneat": "examples.visual_discrimination.hyperneat",
+    "xor/fdneat": "examples.xor.fdneat",
     "xor/fsneat": "examples.xor.fsneat",
     "xor/hyperneat": "examples.xor.hyperneat",
     "xor/neat": "examples.xor.neat",

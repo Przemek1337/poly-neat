@@ -1,0 +1,71 @@
+# PolyNEAT – FD-NEAT XOR-with-distractors configuration
+# Bliźniacza konfiguracja do fsneat.yaml: te same dane (2 istotne wejścia
+# + 6 kolumn szumu), ta sama funkcja przystosowania, ten sam budżet pokoleń.
+# Różni ją wyłącznie strategia selekcji cech: FS-NEAT dobudowuje wejścia,
+# FD-NEAT startuje w pełni połączony i je usuwa (Tan i in., 2012).
+# Kryterium sukcesu: best_fitness >= 3.95 w 500 pokoleniach.
+
+population_size: 150
+number_of_input_nodes: 8
+number_of_output_nodes: 1
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+# FD-NEAT startuje tak jak waniliowy NEAT — w pełni połączony.
+initial_population_strategy: fully_connected
+
+# Operator deselekcji cech — jedyna różnica wobec NEAT-a.
+probability_of_deleting_input_connection: 0.05
+
+# add_connection na 0.10, identycznie jak w fsneat.yaml — jest tu mechanizmem
+# NAPRAWY, nie selekcji: gdy kasowanie wytnie wejście 0 albo 1, bez których
+# XOR-a rozwiązać się nie da, tylko on może je przywrócić.
+probability_of_add_node_mutation: 0.03
+probability_of_add_connection_mutation: 0.10
+
+# Te dwie wartości dobrano pomiarem, nie na oko. Przemiatanie po 10 ziarnach
+# (base-seed 0), metryki liczone wyłącznie na biegach ROZWIĄZANYCH, bo tylko
+# w nich liczba cech cokolwiek znaczy:
+#
+#   delete  add   rozwiązanych  cechy  pokolenia
+#   0.05    0.03      3/10       3.67    270.0     za mało naprawy: wycięte
+#                                                  wejście nie wraca
+#   0.05    0.10      6/10       5.00     96.5     WYBRANE
+#   0.02    0.10      6/10       6.00    245.5     zdominowane: gorsze na
+#                                                  każdej osi niż wiersz wyżej
+#
+# Dla odniesienia FS-NEAT na tych samych ziarnach: 10/10, 5.50 cech, 158.4 pok.
+# Pełne dane wraz z configami leżą w benchmarks/results/xor_fdneat_*.json.
+probability_of_genome_weight_mutation: 0.80
+probability_of_weight_perturbation: 0.90
+probability_of_weight_replacement: 0.10
+probability_of_toggle_connection_enabled: 0.01
+
+# Inicjalizacja i perturbacja wag
+initial_weight_range_min: -2.0
+initial_weight_range_max: 2.0
+weight_perturbation_magnitude: 0.5
+
+# Specjacja (współczynniki z pracy źródłowej NEAT-a)
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+# Cykl życia gatunków
+species_elitism_count: 1
+species_stagnation_generations_limit: 15
+minimum_species_size_for_elitism: 6
+
+# Krzyżowanie
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
+probability_of_interspecies_mating: 0.001
+
+# Selekcja rodziców
+tournament_size_for_parent_selection: 3
+species_survival_fraction_for_reproduction: 0.2
+
+# Funkcje aktywacji
+default_activation_function_for_hidden_nodes: steepened_sigmoid
+default_activation_function_for_output_nodes: steepened_sigmoid

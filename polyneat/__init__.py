@@ -42,6 +42,10 @@ from polyneat.algorithms.exact.single_species_speciator import SingleSpeciesSpec
 from polyneat.algorithms.exact.torch_convolutional_phenotype import (
     TorchConvolutionalPhenotype,
 )
+from polyneat.algorithms.fdneat.fdneat_algorithm import FDNEATAlgorithm
+from polyneat.algorithms.fdneat.mutations.delete_input_connection_mutation import (
+    DeleteInputConnectionMutation,
+)
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
@@ -75,6 +79,7 @@ from polyneat.configs.algorithm_config import AlgorithmConfig
 from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.configs.configuration_errors import ConfigurationError
 from polyneat.configs.exact.exact_config import EXACTConfig
+from polyneat.configs.fdneat.fdneat_config import FDNEATConfig
 from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
 from polyneat.configs.lneat.lneat_config import LNEATConfig
 from polyneat.configs.neat.neat_config import NEATConfig
@@ -205,6 +210,10 @@ __all__ = [
     # NEAT algorithm
     "NEATAlgorithm",
     "FSNEATAlgorithm",
+    # FD-NEAT algorithm
+    "FDNEATConfig",
+    "FDNEATAlgorithm",
+    "DeleteInputConnectionMutation",
     # L-NEAT algorithm
     "LNEATConfig",
     "LNEATAlgorithm",

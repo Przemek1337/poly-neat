@@ -8,6 +8,7 @@ Implemented algorithms:
 |---|---|---|---|
 | NEAT | `NEATAlgorithm` | Evolves network topology and weights from a minimal start | Stanley & Miikkulainen, 2002 |
 | FS-NEAT | `FSNEATAlgorithm` | Starts each genome with a single random input connection, so evolution selects the relevant input features | Whiteson et al., 2005 |
+| FD-NEAT | `FDNEATAlgorithm` | Starts fully connected and deletes input connections, so evolution *deselects* the irrelevant features | Tan et al., 2012 |
 | HyperNEAT | `HyperNEATAlgorithm` | Evolves a CPPN that paints the weights of a fixed substrate as a function of geometry | Stanley, D'Ambrosio & Gauci, 2009 |
 | NEAT-DBM | `NEATDBMAlgorithm` | Recombines each child's weights from three donor genomes, differential-evolution style | Stanovov et al., 2021 |
 | C-NEAT | `CNEATAlgorithm` | Scores each organism on one class only and keeps a container of the best recognizer per class | Alfaham et al., 2024 |
@@ -49,14 +50,14 @@ uv run python -m examples.mnist.hyperneat     # HyperNEAT on down-pooled MNIST
 uv run python -m examples.mnist.exact         # EXACT on full-resolution MNIST
 ```
 
-All eleven examples:
+All twelve examples:
 
-| Task | NEAT | FS-NEAT | HyperNEAT | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `xor` | ✓ | ✓ | ✓ | ✓ | | | |
-| `iris` | | | | ✓ | ✓ | ✓ | |
-| `mnist` | ✓ | | ✓ | | | | ✓ |
-| `visual_discrimination` | | | ✓ | | | | |
+| Task | NEAT | FS-NEAT | FD-NEAT | HyperNEAT | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `xor` | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
+| `iris` | | | | | ✓ | ✓ | ✓ | |
+| `mnist` | ✓ | | | ✓ | | | | ✓ |
+| `visual_discrimination` | | | | ✓ | | | | |
 
 Artifacts — best genome as JSON and pickle, topology renders, TensorBoard event files — are written to `examples/<task>/artifacts/<algorithm>/`.
 
@@ -221,6 +222,7 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 |---|---|
 | `neat/` | Thin entry point: re-exports `NEATAlgorithm` from `polyneat/core/neat/`. |
 | `fsneat/` | `FSNEATAlgorithm(NEATAlgorithm)` overrides only `create_initial_population`; every genome starts with a single random input→output connection, so evolution itself selects the relevant input features. Any `initial_population_strategy` from YAML is deliberately ignored. |
+| `fdneat/` | `FDNEATAlgorithm(NEATAlgorithm)` overrides only `_build_mutation`, appending `DeleteInputConnectionMutation` to the standard four. The fully connected start is inherited unchanged — it *is* FD-NEAT's start, and evolution removes what does not earn its place. |
 | `hyperneat/` | `HyperNEATAlgorithm` evolves CPPNs; `substrate.py` builds substrates (`build_grid_sandwich_substrate` for two-sheet sandwiches, `build_layered_substrate` for the general case); `HyperNEATPhenotypeDecoder` queries the CPPN for every substrate connection and thresholds the result; `AddNodeWithRandomActivationMutation` gives new CPPN nodes a random activation from the configured set. |
 | `neatdbm/` | `NEATDBMAlgorithm` - after standard reproduction, `DifferenceBasedWeightMutation` recombines each child's weights from three donors at shared innovation ids. |
 | `cneat/` | `CNEATAlgorithm` - organisms are scored on one assigned class; `ClassGenomeContainer` keeps the best recognizer per class; `ContainerEnsemblePhenotype` classifies by argmax over the container networks; `ContainerUpdateCallback` and `ContainerProgressLogger` maintain and report the container during the run. |
@@ -476,6 +478,42 @@ An earlier version of the implementation needed ~165 generations on average to r
 
 ---
 
+## Feature selection: FS-NEAT against FD-NEAT
+
+The two feature-selection variants solve the same problem from opposite ends, so
+they share a benchmark: XOR padded with six pure-noise inputs
+(`XORWithDistractorsEvaluator`). Only inputs 0 and 1 carry signal, and both
+examples report `number_of_connected_input_features` — inputs with an *enabled
+path to the output*, computed by the same library function, so an input feeding a
+dead-end hidden node does not count.
+
+Ten seeds each (`--base-seed 0`, CPU). Feature counts are averaged over the
+**solved** runs only, because in an unsolved run the count says nothing:
+
+| Variant | Solved | Features used (solved) | Generations (solved) |
+|---|:-:|:-:|:-:|
+| FS-NEAT | **10/10** | 5.50 | 158.4 |
+| FD-NEAT | 6/10 | **5.00** | **96.5** |
+
+FD-NEAT deselects harder and, when it succeeds, converges faster — but it solves
+XOR far less reliably. The mechanism is visible in the ablation: deletion has to
+be balanced against `probability_of_add_connection_mutation`, which is the only
+way a wrongly deleted input can return.
+
+| `delete` | `add_connection` | Solved | Features | Generations |
+|---:|---:|:-:|:-:|:-:|
+| 0.05 | 0.03 | 3/10 | 3.67 | 270.0 |
+| **0.05** | **0.10** | **6/10** | **5.00** | **96.5** |
+| 0.02 | 0.10 | 6/10 | 6.00 | 245.5 |
+
+Too little repair (row 1) halves the success rate: once the operator cuts input 0
+or 1 the genome cannot get it back. Too little deletion (row 3) is dominated —
+worse on every axis than row 2. The shipped `examples/xor/fdneat.yaml` uses row 2,
+and the full data with the exact configs that produced it is written to
+`benchmarks/results/xor_fdneat_*.json`.
+
+---
+
 ## Using the library
 
 ### Logging
@@ -583,6 +621,7 @@ uv run ruff format polyneat
 - Stanley, K. O. & Miikkulainen, R. (2002). **Evolving Neural Networks through Augmenting Topologies**. *Evolutionary Computation*, 10(2), 99–127.
 - Chen, L. & Alahakoon, D. (2006). **NeuroEvolution of Augmenting Topologies with Learning for Data Classification**. *ICIA 2006: 2nd International Conference on Information and Automation*, pp. 367–371.
 - Whiteson, S., Stone, P., Stanley, K. O., Miikkulainen, R. & Kohl, N. (2005). **Automatic Feature Selection in Neuroevolution**. *GECCO 2005: Proceedings of the Genetic and Evolutionary Computation Conference*, pp. 1225–1232.
+- Tan, M., Deklerck, R., Jansen, B. & Cornelis, J. (2012). **Analysis of a Feature-Deselective Neuroevolution Classifier (FD-NEAT) in a Computer-Aided Lung Nodule Detection System for CT Images**. *GECCO '12 Companion: Proceedings of the 14th Annual Conference Companion on Genetic and Evolutionary Computation*, pp. 539–546. DOI: 10.1145/2330784.2330869
 - Stanley, K. O., D'Ambrosio, D. B. & Gauci, J. (2009). **A Hypercube-Based Encoding for Evolving Large-Scale Neural Networks**. *Artificial Life*, 15(2), 185–212. DOI: 10.1162/artl.2009.15.2.15202
 - Stanovov, V., Akhmedova, Sh. & Semenkin, E. (2021). **Neuroevolution of augmented topologies with difference-based mutation**. *IOP Conference Series: Materials Science and Engineering*, 1047, 012075. DOI: 10.1088/1757-899X/1047/1/012075
 - Alfaham, A., Van Raemdonck, S. & Mercelis, S. (2024). **Genetic NEAT-Based Method for Multi-Class Classification**. *ACAI 2024: 7th International Conference on Algorithms, Computing and Artificial Intelligence*. DOI: 10.1109/ACAI63924.2024.10899662
