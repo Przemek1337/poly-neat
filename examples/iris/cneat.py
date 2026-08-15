@@ -81,7 +81,12 @@ def run_experiment(
         pn.ContainerUpdateCallback(container, fitness_evaluator),
     ]
     if artifacts_directory is not None:
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label="iris-cneat",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,

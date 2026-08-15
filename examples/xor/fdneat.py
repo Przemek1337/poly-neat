@@ -87,7 +87,12 @@ def run_experiment(
     if artifacts_directory is not None:
         callbacks.append(pn.BestGenomePersister(output_directory=artifacts_directory))
         callbacks.append(pn.NetworkTopologyVisualizer(output_directory=artifacts_directory))
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label="xor-fdneat",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,

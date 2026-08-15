@@ -227,6 +227,17 @@ class EXACTGenome:
             training_hyperparameters=self.training_hyperparameters,
         )
 
+    def count_structural_elements(self) -> tuple[int, int]:
+        """Return ``(number_of_nodes, number_of_enabled_edges)``.
+
+        The genome's structural complexity, aggregated per generation into the
+        node/connection growth curves logged to TensorBoard. Named to match
+        :meth:`NEATGenome.count_structural_elements` so the base generational
+        loop can call it on either genome type.
+        """
+        number_of_enabled_edges = sum(1 for edge_gene in self.edge_genes if edge_gene.is_enabled)
+        return len(self.node_genes), number_of_enabled_edges
+
     def get_node_gene_by_id(self, node_id: int) -> FilterNodeGene | None:
         """Return the node gene with ``node_id``, or ``None`` when absent."""
         for node_gene in self.node_genes:

@@ -16,7 +16,7 @@ References:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import torch
 
@@ -31,6 +31,12 @@ from polyneat.evaluators.retina_evaluator import (
     MAXIMUM_RETINA_FITNESS,
     RetinaProblemEvaluator,
 )
+from polyneat.runner.evolution_callback_protocol import BaseEvolutionCallback
+
+if TYPE_CHECKING:
+    from polyneat.core.generation_statistics import GenerationStatistics
+    from polyneat.core.population import Population
+    from polyneat.runner.run_context import RunContext
 
 TARGET_FITNESS: float = 0.99 * MAXIMUM_RETINA_FITNESS
 
@@ -49,6 +55,44 @@ class _SubstrateDecoder(Protocol):
     def substrate(self): ...  # noqa: ANN201
 
     def decode_substrate_genome(self, genome): ...  # noqa: ANN001, ANN201
+
+
+class _SubstrateModularityMetricsCallback(BaseEvolutionCallback):
+    """Logs the retina modularity measures per generation, not just at the end.
+
+    Placed before the ``TensorBoardLogger`` in the callback list, it decodes the
+    current best genome each generation and writes the cross-hemisphere measures
+    into ``statistics.extra_metrics`` so they are logged under ``extra/``
+    alongside fitness. That turns the end-of-run modularity numbers into curves
+    over generations - the comparison the HyperNEAT-LEO claim is actually about.
+    One decode per generation, negligible next to evaluating the whole
+    population.
+    """
+
+    def __init__(self, decoder: _SubstrateDecoder) -> None:
+        self._decoder = decoder
+
+    def on_generation_completed(
+        self,
+        context: RunContext,
+        new_population: Population,
+        statistics: GenerationStatistics,
+    ) -> None:
+        best_genome = context.current_best_genome
+        if best_genome is None:
+            return
+        decoded_substrate_genome = self._decoder.decode_substrate_genome(best_genome)
+        statistics.extra_metrics["modularity_expressed_connections"] = float(
+            count_expressed_connections(decoded_substrate_genome)
+        )
+        statistics.extra_metrics["modularity_cross_hemisphere_connections"] = float(
+            count_cross_hemisphere_connections(self._decoder.substrate, decoded_substrate_genome)
+        )
+        statistics.extra_metrics["modularity_cross_hemisphere_input_dependencies"] = float(
+            count_cross_hemisphere_input_dependencies(
+                self._decoder.substrate, decoded_substrate_genome
+            )
+        )
 
 
 def run_retina_experiment(
@@ -84,7 +128,13 @@ def run_retina_experiment(
     callbacks: list = [pn.ConsoleStatisticsLogger()]
     if artifacts_directory is not None:
         callbacks.append(pn.BestGenomePersister(output_directory=artifacts_directory))
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(_SubstrateModularityMetricsCallback(algorithm.phenotype_decoder))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label=f"retina-{variant_label}",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,

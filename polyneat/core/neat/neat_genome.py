@@ -122,6 +122,17 @@ class NEATGenome:
             connection_genes=self.connection_genes,
         )
 
+    def count_structural_elements(self) -> tuple[int, int]:
+        """Return ``(number_of_nodes, number_of_enabled_connections)``.
+
+        The genome's structural complexity, aggregated per generation into the
+        node/connection growth curves logged to TensorBoard.
+        """
+        number_of_enabled_connections = sum(
+            1 for connection_gene in self.connection_genes if connection_gene.is_enabled
+        )
+        return len(self.node_genes), number_of_enabled_connections
+
     def get_node_gene_by_id(self, node_id: int) -> NodeGene | None:
         """Return the node gene with ``node_id``, or ``None`` when absent."""
         for node_gene in self.node_genes:

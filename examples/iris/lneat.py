@@ -166,7 +166,8 @@ def run_experiment(
                 pn.TensorBoardLogger(
                     log_directory=artifacts_directory
                     / "tensorboard"
-                    / f"class_{class_label_index}"
+                    / f"class_{class_label_index}",
+                    run_label=f"iris-lneat_class{class_label_index}",
                 )
             )
 

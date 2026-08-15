@@ -85,7 +85,12 @@ def run_experiment(
     callbacks: list = [pn.ConsoleStatisticsLogger()]
     if artifacts_directory is not None:
         callbacks.append(pn.BestGenomePersister(output_directory=artifacts_directory))
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label="iris-neatdbm",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
