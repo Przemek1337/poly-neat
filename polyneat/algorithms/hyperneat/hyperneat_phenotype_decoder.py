@@ -19,6 +19,9 @@ from polyneat.algorithms.hyperneat.substrate import Substrate, SubstrateNode
 from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.core.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def scale_cppn_output_to_substrate_weight(
@@ -180,6 +183,12 @@ class HyperNEATPhenotypeDecoder:
             )
             next_innovation_id += 1
 
+        logger.debug(
+            "HyperNEAT substrate decoded: %d of %d candidate connections expressed over %d nodes",
+            len(substrate_connection_genes),
+            len(candidate_source_target_node_pairs),
+            len(substrate_node_genes),
+        )
         return NEATGenome(
             node_genes=substrate_node_genes,
             connection_genes=tuple(substrate_connection_genes),

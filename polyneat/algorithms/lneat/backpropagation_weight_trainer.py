@@ -6,6 +6,9 @@ from polyneat.algorithms.lneat.trainable_torch_phenotype import (
     TrainableTorchFeedForwardPhenotype,
 )
 from polyneat.core.neat.neat_genome import NEATGenome
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _validate_feature_and_binary_target_pair(
@@ -169,6 +172,15 @@ class BackpropagationWeightTrainer:
         self._training_indicator = training_indicator
         self._classification_threshold = classification_threshold
         self._device_for_computation = device_for_computation
+        logger.info(
+            "BackpropagationWeightTrainer ready: %d classification samples, "
+            "%d learning samples, %d iterations/session, lr=%s, device=%s",
+            self._classification_features.shape[0],
+            self._learning_sample_features.shape[0],
+            self._number_of_iterations,
+            self._learning_rate,
+            self._device_for_computation,
+        )
 
     def genome_requires_training(self, genome: NEATGenome) -> bool:
         """Return whether the genome is not a Type 1 network (section IV.B.2).
@@ -225,6 +237,11 @@ class BackpropagationWeightTrainer:
             loss = torch.mean((outputs - self._learning_sample_binary_targets) ** 2)
             loss.backward()
             optimizer.step()
+        logger.debug(
+            "L-NEAT trained genome: %d iterations, final learning-set MSE %.6f",
+            self._number_of_iterations,
+            float(loss),
+        )
         return phenotype.extract_genome_with_trained_weights()
 
     def train_genome_if_learning_needed(self, genome: NEATGenome) -> NEATGenome:

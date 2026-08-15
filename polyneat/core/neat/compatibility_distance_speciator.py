@@ -100,6 +100,11 @@ class CompatibilityDistanceSpeciator:
 
         self._prune_empty_species()
         self._resample_species_representatives_from_current_members(genomes, rng)
+        logger.debug(
+            "Speciation assigned %d genomes to %d species",
+            len(genomes),
+            len(self._species_representatives_from_previous_generation),
+        )
         return species_id_per_genome
 
     def _resample_species_representatives_from_current_members(

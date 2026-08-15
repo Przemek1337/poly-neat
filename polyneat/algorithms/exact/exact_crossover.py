@@ -12,6 +12,9 @@ from polyneat.algorithms.exact.exact_genome import (
     FilterNodeGene,
     compute_convolution_kernel_size,
 )
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,11 @@ class EXACTCrossover:
             )
             if child_candidate.are_all_output_nodes_reachable():
                 return child_candidate
+        logger.debug(
+            "EXACT crossover exhausted %d attempts without a reachable child; "
+            "returning a clone of the fitter parent",
+            self.maximum_attempts_for_reachable_child,
+        )
         return replace(fitter_parent, is_trained=False)
 
     def _produce_child_candidate(

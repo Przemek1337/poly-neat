@@ -137,6 +137,14 @@ class NEATAlgorithm:
             config.device_for_phenotype_evaluation
         )
 
+        logger.info(
+            "Building %s: population_size=%d, device=%s, initial_population=%s",
+            cls.__name__,
+            config.population_size,
+            resolved_device,
+            config.initial_population_strategy,
+        )
+
         return cls(
             config=config,
             mutation=cls._build_mutation(config),
