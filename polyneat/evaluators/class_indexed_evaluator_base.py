@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from polyneat.core.component_protocols import Phenotype
 from polyneat.core.type_aliases import FitnessValue
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ClassIndexedFitnessEvaluator:
@@ -49,6 +52,7 @@ class ClassIndexedFitnessEvaluator:
         self, phenotypes: list[Phenotype]
     ) -> list[FitnessValue]:
         """Score each phenotype on the class label its batch index maps to."""
+        logger.debug("Evaluating %d phenotypes per assigned class label", len(phenotypes))
         return [
             self.evaluate_phenotype_for_class(
                 phenotype, organism_index % self._number_of_class_labels

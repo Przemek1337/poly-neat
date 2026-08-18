@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from polyneat.core.component_protocols import Phenotype
 from polyneat.core.type_aliases import FitnessValue
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class SequentialFitnessEvaluator:
@@ -17,4 +20,5 @@ class SequentialFitnessEvaluator:
 
     def evaluate_batch_of_phenotypes(self, phenotypes: list[Phenotype]) -> list[FitnessValue]:
         """Evaluate ``phenotypes`` sequentially, preserving order."""
+        logger.debug("Evaluating %d phenotypes sequentially", len(phenotypes))
         return [self.evaluate_single_phenotype(phenotype) for phenotype in phenotypes]

@@ -8,6 +8,9 @@ from numpy.random import Generator
 
 from polyneat.algorithms.exact.exact_genome import EXACTGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,7 @@ class DisableConvolutionEdgeMutation:
             if edge_gene.is_enabled
         ]
         if not enabled_edge_indices:
+            logger.debug("DisableConvolutionEdgeMutation skipped: no enabled edges")
             return genome
         selected_edge_index = enabled_edge_indices[
             int(rng.integers(len(enabled_edge_indices)))

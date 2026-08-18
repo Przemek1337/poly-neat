@@ -137,6 +137,14 @@ class NEATAlgorithm:
             config.device_for_phenotype_evaluation
         )
 
+        logger.info(
+            "Building %s: population_size=%d, device=%s, initial_population=%s",
+            cls.__name__,
+            config.population_size,
+            resolved_device,
+            config.initial_population_strategy,
+        )
+
         return cls(
             config=config,
             mutation=cls._build_mutation(config),
@@ -369,6 +377,13 @@ class NEATAlgorithm:
         self.innovation_tracker.reset_for_new_generation()
 
         elapsed_seconds = time.perf_counter() - generation_start_wall_time
+        node_and_connection_counts = [
+            genome.count_structural_elements() for genome in neat_genomes_in_current_population
+        ]
+        node_counts = [node_count for node_count, _connection_count in node_and_connection_counts]
+        enabled_connection_counts = [
+            connection_count for _node_count, connection_count in node_and_connection_counts
+        ]
         generation_statistics = GenerationStatistics(
             generation_number=current_population.generation_number,
             best_fitness=max(fitnesses_of_current_population),
@@ -381,6 +396,10 @@ class NEATAlgorithm:
                 "innovation_id_high_water_mark": float(
                     self.innovation_tracker.next_innovation_id_snapshot
                 ),
+                "nodes_mean": mean(node_counts),
+                "nodes_max": float(max(node_counts)),
+                "enabled_connections_mean": mean(enabled_connection_counts),
+                "enabled_connections_max": float(max(enabled_connection_counts)),
             },
         )
         return next_generation_population, generation_statistics

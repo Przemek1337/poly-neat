@@ -56,6 +56,10 @@ class HyperNEATConfig(NEATConfig):
     def validate(self) -> None:
         """Validate the CPPN and substrate settings.
 
+        Split into three overridable parts so a variant that changes only one
+        aspect - HyperNEAT-LEO changes the CPPN's input/output counts and the
+        connection-expression rule - can reuse the rest instead of copying it.
+
         Raises:
             ConfigurationError: If the CPPN input/output counts are not 4/1, a
                 substrate layer size is non-positive, the weight-expression
@@ -64,6 +68,16 @@ class HyperNEATConfig(NEATConfig):
                 substrate node activation is not a registered function.
         """
         super().validate()
+        self._validate_cppn_input_output_counts()
+        self._validate_substrate_settings()
+        self._validate_connection_expression_settings()
+
+    def _validate_cppn_input_output_counts(self) -> None:
+        """Check the CPPN has exactly 4 coordinate inputs and 1 weight output.
+
+        Raises:
+            ConfigurationError: Naming the field, the value and the reason.
+        """
         if self.number_of_input_nodes != CPPN_INPUT_NODE_COUNT:
             raise ConfigurationError(
                 f"HyperNEAT uses 2-D substrate coordinates, so the CPPN must have "
@@ -76,6 +90,13 @@ class HyperNEATConfig(NEATConfig):
                 f"(the queried connection weight); got "
                 f"number_of_output_nodes={self.number_of_output_nodes}"
             )
+
+    def _validate_substrate_settings(self) -> None:
+        """Check substrate geometry and the substrate node activation.
+
+        Raises:
+            ConfigurationError: Naming the field, the value and the reason.
+        """
         if self.substrate_input_layer_size < 1:
             raise ConfigurationError(
                 f"substrate_input_layer_size must be >= 1, got "
@@ -90,11 +111,6 @@ class HyperNEATConfig(NEATConfig):
             raise ConfigurationError(
                 f"every substrate hidden layer size must be >= 1, got "
                 f"{self.substrate_hidden_layer_sizes}"
-            )
-        if not (0.0 <= self.weight_expression_threshold < 1.0):
-            raise ConfigurationError(
-                f"weight_expression_threshold must be in [0.0, 1.0), got "
-                f"{self.weight_expression_threshold}"
             )
         if self.max_substrate_connection_weight_magnitude <= 0.0:
             raise ConfigurationError(
@@ -122,4 +138,22 @@ class HyperNEATConfig(NEATConfig):
                 f"'{self.substrate_node_activation_function}' is not a registered "
                 f"activation function. Known: "
                 f"{sorted(ACTIVATION_FUNCTION_NAME_TO_CALLABLE.keys())}"
+            )
+
+    def _validate_connection_expression_settings(self) -> None:
+        """Check the rule deciding which substrate connections are expressed.
+
+        Classic HyperNEAT expresses a connection when the queried weight's
+        magnitude clears a threshold. HyperNEAT-LEO replaces that rule wholesale
+        with a dedicated CPPN output, so it overrides this method rather than
+        inheriting a check on a field it does not use.
+
+        Raises:
+            ConfigurationError: If ``weight_expression_threshold`` is outside
+                ``[0.0, 1.0)``.
+        """
+        if not (0.0 <= self.weight_expression_threshold < 1.0):
+            raise ConfigurationError(
+                f"weight_expression_threshold must be in [0.0, 1.0), got "
+                f"{self.weight_expression_threshold}"
             )

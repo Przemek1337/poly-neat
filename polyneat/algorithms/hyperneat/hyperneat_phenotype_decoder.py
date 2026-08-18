@@ -19,6 +19,9 @@ from polyneat.algorithms.hyperneat.substrate import Substrate, SubstrateNode
 from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
 from polyneat.core.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def scale_cppn_output_to_substrate_weight(
@@ -94,6 +97,11 @@ class HyperNEATPhenotypeDecoder:
         self._substrate_node_activation_function_name = substrate_node_activation_function_name
         self._device_for_computation = device_for_computation
 
+    @property
+    def substrate(self) -> Substrate:
+        """The substrate this decoder paints, exposed for geometry-based metrics."""
+        return self._substrate
+
     def build_phenotype_from_genome(self, genome: NEATGenome) -> TorchFeedForwardPhenotype:
         """Decode a CPPN genome into an executable substrate phenotype.
 
@@ -102,9 +110,29 @@ class HyperNEATPhenotypeDecoder:
                 1 weight output) to query.
 
         Returns:
-            A `TorchFeedForwardPhenotype` for the substrate whose connection
-            weights were painted by the CPPN. Connections whose queried weight
-            falls at or below the expression threshold are omitted.
+            A `TorchFeedForwardPhenotype` running the decoded substrate.
+        """
+        return TorchFeedForwardPhenotype(
+            neat_genome=self.decode_substrate_genome(genome),
+            device_for_computation=self._device_for_computation,
+        )
+
+    def decode_substrate_genome(self, genome: NEATGenome) -> NEATGenome:
+        """Query the CPPN and return the substrate as a genome.
+
+        Separate from :meth:`build_phenotype_from_genome` because
+        ``TorchFeedForwardPhenotype`` does not retain the genome it was built
+        from - it decomposes it into a topological order and connection maps - so
+        structural measurements, such as the modularity metrics used to compare
+        this decoder with the HyperNEAT-LEO one, have to obtain it here.
+
+        Args:
+            genome: The CPPN genome to query.
+
+        Returns:
+            A synthetic `NEATGenome` with one node gene per substrate node, and
+            only the connections whose queried weight cleared the expression
+            threshold.
         """
         cppn_phenotype = self._cppn_phenotype_decoder.build_phenotype_from_genome(genome)
 
@@ -113,13 +141,7 @@ class HyperNEATPhenotypeDecoder:
         substrate_node_genes = self._build_substrate_node_genes()
 
         if not candidate_source_target_node_pairs:
-            return TorchFeedForwardPhenotype(
-                neat_genome=NEATGenome(
-                    node_genes=substrate_node_genes,
-                    connection_genes=(),
-                ),
-                device_for_computation=self._device_for_computation,
-            )
+            return NEATGenome(node_genes=substrate_node_genes, connection_genes=())
 
         coordinate_query_tensor = torch.tensor(
             [
@@ -161,13 +183,15 @@ class HyperNEATPhenotypeDecoder:
             )
             next_innovation_id += 1
 
-        substrate_genome = NEATGenome(
+        logger.debug(
+            "HyperNEAT substrate decoded: %d of %d candidate connections expressed over %d nodes",
+            len(substrate_connection_genes),
+            len(candidate_source_target_node_pairs),
+            len(substrate_node_genes),
+        )
+        return NEATGenome(
             node_genes=substrate_node_genes,
             connection_genes=tuple(substrate_connection_genes),
-        )
-        return TorchFeedForwardPhenotype(
-            neat_genome=substrate_genome,
-            device_for_computation=self._device_for_computation,
         )
 
     def _build_substrate_node_genes(self) -> tuple[NodeGene, ...]:

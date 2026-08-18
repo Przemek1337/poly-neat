@@ -56,13 +56,36 @@ class ConsoleStatisticsLogger(BaseEvolutionCallback):
 class TensorBoardLogger(BaseEvolutionCallback):
     """Writes per-generation scalar metrics to a TensorBoard event file."""
 
-    def __init__(self, log_directory: Path, run_name: str | None = None) -> None:
+    def __init__(
+        self,
+        log_directory: Path,
+        run_name: str | None = None,
+        run_label: str | None = None,
+    ) -> None:
+        """Configure where and under what name the run's events are written.
+
+        Args:
+            log_directory: Directory the run's event subdirectory is created in.
+            run_name: Exact subdirectory name, overriding everything else. Rarely
+                needed; prefer ``run_label``.
+            run_label: Human-readable prefix (e.g. ``retina-leo``) prepended to
+                the auto-generated run id, so a run reads as
+                ``retina-leo_<run_id>`` instead of a bare timestamp yet stays
+                unique across re-runs.
+        """
         self._log_directory = log_directory
         self._run_name = run_name
+        self._run_label = run_label
         self._writer: SummaryWriter | None = None
 
     def on_run_started(self, context: RunContext) -> None:
-        resolved_log_directory = self._log_directory / (self._run_name or context.run_id)
+        if self._run_name is not None:
+            run_directory_name = self._run_name
+        elif self._run_label is not None:
+            run_directory_name = f"{self._run_label}_{context.run_id}"
+        else:
+            run_directory_name = context.run_id
+        resolved_log_directory = self._log_directory / run_directory_name
         self._writer = SummaryWriter(log_dir=str(resolved_log_directory))
 
     def on_generation_completed(
@@ -83,6 +106,9 @@ class TensorBoardLogger(BaseEvolutionCallback):
             )
         for metric_name, metric_value in statistics.extra_metrics.items():
             self._writer.add_scalar(f"extra/{metric_name}", metric_value, current_step)
+        # Flush each generation: the default SummaryWriter buffers for up to
+        # flush_secs (120s), which makes a live run look frozen in TensorBoard.
+        self._writer.flush()
 
     def on_run_completed(self, context: RunContext, final_result: object) -> None:
         if self._writer is not None:

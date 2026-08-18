@@ -12,6 +12,9 @@ from polyneat.algorithms.exact.exact_genome import (
     FilterNodeGene,
 )
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,7 @@ class SplitConvolutionEdgeMutation:
             if edge_gene.is_enabled
         ]
         if not enabled_edge_indices:
+            logger.debug("SplitConvolutionEdgeMutation skipped: no enabled edges")
             return genome
         selected_edge_index = enabled_edge_indices[
             int(rng.integers(len(enabled_edge_indices)))
@@ -66,6 +70,7 @@ class SplitConvolutionEdgeMutation:
             minimum_new_node_id=highest_existing_node_id + 1,
         )
         if genome.get_node_gene_by_id(node_split_record.new_node_id) is not None:
+            logger.debug("SplitConvolutionEdgeMutation skipped: drawn split already present")
             return genome
 
         new_node_gene = FilterNodeGene(

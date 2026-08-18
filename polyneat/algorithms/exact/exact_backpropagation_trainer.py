@@ -15,6 +15,9 @@ from polyneat.algorithms.exact.torch_convolutional_phenotype import (
     TorchConvolutionalPhenotype,
 )
 from polyneat.configs.exact.exact_config import EXACTConfig
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class EXACTBackpropagationTrainer:
@@ -137,6 +140,16 @@ class EXACTBackpropagationTrainer:
         self._use_batch_normalization = use_batch_normalization
         self._use_epigenetic_weight_initialization = use_epigenetic_weight_initialization
         self._device_for_computation = device_for_computation
+        logger.info(
+            "EXACTBackpropagationTrainer ready: %d training samples, %dx%d images, "
+            "%d epochs/genome, batch_size=%d, device=%s",
+            self._training_features.shape[0],
+            self._input_image_height,
+            self._input_image_width,
+            self._number_of_training_epochs,
+            self._default_hyperparameters.batch_size,
+            self._device_for_computation,
+        )
 
     @classmethod
     def from_config(
@@ -266,6 +279,7 @@ class EXACTBackpropagationTrainer:
         current_weight_decay = hyperparameters.weight_decay
         examples_processed_since_velocity_reset = 0
         number_of_samples = self._training_features.shape[0]
+        most_recent_batch_loss: float | None = None
 
         for _epoch in range(self._number_of_training_epochs):
             shuffled_indices = torch.randperm(
@@ -284,6 +298,7 @@ class EXACTBackpropagationTrainer:
                 )
                 batch_loss.backward()
                 optimizer.step()
+                most_recent_batch_loss = float(batch_loss)
                 # Eq. 6: decoupled L2 decay on the kernels.
                 with torch.no_grad():
                     for kernel_parameter in kernel_parameters:
@@ -316,5 +331,11 @@ class EXACTBackpropagationTrainer:
                 parameter_group["lr"] = current_learning_rate
                 parameter_group["momentum"] = current_momentum
 
+        if most_recent_batch_loss is not None:
+            logger.debug(
+                "EXACT trained genome over %d epochs, final batch cross-entropy %.6f",
+                self._number_of_training_epochs,
+                most_recent_batch_loss,
+            )
         phenotype.eval()
         return phenotype.extract_genome_with_trained_weights()

@@ -42,6 +42,10 @@ from polyneat.algorithms.exact.single_species_speciator import SingleSpeciesSpec
 from polyneat.algorithms.exact.torch_convolutional_phenotype import (
     TorchConvolutionalPhenotype,
 )
+from polyneat.algorithms.fdneat.fdneat_algorithm import FDNEATAlgorithm
+from polyneat.algorithms.fdneat.mutations.delete_input_connection_mutation import (
+    DeleteInputConnectionMutation,
+)
 from polyneat.algorithms.fsneat.fsneat_algorithm import FSNEATAlgorithm
 from polyneat.algorithms.hyperneat.add_node_random_activation_mutation import (
     AddNodeWithRandomActivationMutation,
@@ -56,6 +60,19 @@ from polyneat.algorithms.hyperneat.substrate import (
     SubstrateNode,
     build_grid_sandwich_substrate,
     build_layered_substrate,
+    build_substrate_from_explicit_layer_coordinates,
+)
+from polyneat.algorithms.hyperneat.substrate_modularity import (
+    count_cross_hemisphere_connections,
+    count_cross_hemisphere_input_dependencies,
+    count_expressed_connections,
+)
+from polyneat.algorithms.hyperneatleo.hyperneatleo_algorithm import HyperNEATLEOAlgorithm
+from polyneat.algorithms.hyperneatleo.leo_phenotype_decoder import (
+    HyperNEATLEOPhenotypeDecoder,
+)
+from polyneat.algorithms.hyperneatleo.leo_seeded_initial_population import (
+    build_leo_seeded_initial_population,
 )
 from polyneat.algorithms.lneat.backpropagation_weight_trainer import (
     BackpropagationWeightTrainer,
@@ -75,7 +92,9 @@ from polyneat.configs.algorithm_config import AlgorithmConfig
 from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.configs.configuration_errors import ConfigurationError
 from polyneat.configs.exact.exact_config import EXACTConfig
+from polyneat.configs.fdneat.fdneat_config import FDNEATConfig
 from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
+from polyneat.configs.hyperneatleo.hyperneatleo_config import HyperNEATLEOConfig
 from polyneat.configs.lneat.lneat_config import LNEATConfig
 from polyneat.configs.neat.neat_config import NEATConfig
 from polyneat.configs.neatdbm.neatdbm_config import NEATDBMConfig
@@ -126,6 +145,7 @@ from polyneat.core.neat.tournament_parent_selection import TournamentParentSelec
 from polyneat.core.population import Population
 from polyneat.core.type_aliases import FitnessValue, InnovationId, SpeciesId
 from polyneat.evaluators.parallel_evaluator_wrapper import ParallelFitnessEvaluatorWrapper
+from polyneat.evaluators.retina_evaluator import RetinaProblemEvaluator
 from polyneat.evaluators.xor_evaluator import XORFitnessEvaluator
 from polyneat.logging_utils.custom_logger import (
     CustomLogger,
@@ -205,6 +225,10 @@ __all__ = [
     # NEAT algorithm
     "NEATAlgorithm",
     "FSNEATAlgorithm",
+    # FD-NEAT algorithm
+    "FDNEATConfig",
+    "FDNEATAlgorithm",
+    "DeleteInputConnectionMutation",
     # L-NEAT algorithm
     "LNEATConfig",
     "LNEATAlgorithm",
@@ -239,7 +263,17 @@ __all__ = [
     "SubstrateNode",
     "build_layered_substrate",
     "build_grid_sandwich_substrate",
+    "build_substrate_from_explicit_layer_coordinates",
     "AddNodeWithRandomActivationMutation",
+    # HyperNEAT-LEO algorithm
+    "HyperNEATLEOConfig",
+    "HyperNEATLEOAlgorithm",
+    "HyperNEATLEOPhenotypeDecoder",
+    "build_leo_seeded_initial_population",
+    "count_cross_hemisphere_connections",
+    "count_cross_hemisphere_input_dependencies",
+    "count_expressed_connections",
+    "RetinaProblemEvaluator",
     # C-NEAT algorithm
     "CNEATConfig",
     "CNEATAlgorithm",
