@@ -1,29 +1,29 @@
-# PolyNEAT – HyperNEAT-LEO na problemie siatkówki
+# PolyNEAT – HyperNEAT-LEO on the retina problem
 #
-# Zadanie jest modularne z definicji: odpowiedź "obiekt po lewej" nie zależy od
-# żadnego piksela po prawej (Kashtan & Alon, 2005). LEO zaszczepia lokalność,
-# więc pokolenie 0 składa się z dwóch rozłącznych półkul, każdej ze swoim
-# wyjściem (Verbancsics & Stanley, 2011).
+# The task is modular by definition: the answer "object on the left" does not
+# depend on any pixel on the right (Kashtan & Alon, 2005). LEO seeds locality,
+# so generation 0 consists of two disjoint hemispheres, each with its own
+# output (Verbancsics & Stanley, 2011).
 #
-# GEOMETRIA SUBSTRATU — przerwa między półkulami jest KONIECZNA.
-# Przy równomiernym rozkładzie ośmiu węzłów na [-1, 1] odległości wewnątrz
-# półkuli sięgają 0.857, a między półkulami zaczynają się od 0.286: zakresy się
-# nakładają i żaden próg lokalności ich nie rozdzieli.
+# SUBSTRATE GEOMETRY — the gap between hemispheres is NECESSARY.
+# With eight nodes spread uniformly over [-1, 1], within-hemisphere distances
+# reach 0.857 while between-hemisphere distances start at 0.286: the ranges
+# overlap and no locality threshold can separate them.
 #
-# Przy stałych zaszczepienia ze źródła (w=0.6, g=2.0, b=-1) próg wypada na
-# sqrt(ln 2)/0.6 = 1.388. Skupiska ±0.75…±1.0 dają wewnątrz <= 0.25,
-# a między >= 1.50 — próg leży czysto pomiędzy.
+# With the source's seeding constants (w=0.6, g=2.0, b=-1) the threshold falls at
+# sqrt(ln 2)/0.6 = 1.388. Clusters at ±0.75…±1.0 give <= 0.25 within
+# and >= 1.50 between — the threshold sits cleanly in between.
 #
-# Kolejność pikseli w warstwie wejściowej, za docstringiem RetinaProblemEvaluator:
-#   0,1 = lewa kolumna zewnętrzna lewego bloku (góra, dół)
-#   2,3 = kolumna wewnętrzna lewego bloku
-#   4,5 = kolumna wewnętrzna prawego bloku
-#   6,7 = prawa kolumna zewnętrzna prawego bloku
-# Dzięki temu współrzędna x niesie strukturę kolumn, którą reguła zadania czyta.
+# Input-layer pixel order, following the RetinaProblemEvaluator docstring:
+#   0,1 = outer left column of the left block (top, bottom)
+#   2,3 = inner column of the left block
+#   4,5 = inner column of the right block
+#   6,7 = outer right column of the right block
+# This way the x coordinate carries the column structure that the task rule reads.
 
 population_size: 150
-number_of_input_nodes: 4      # x1, y1, x2, y2 — jak w zwykłym HyperNEAT
-number_of_output_nodes: 2     # waga, LEO
+number_of_input_nodes: 4      # x1, y1, x2, y2 — as in plain HyperNEAT
+number_of_output_nodes: 2     # weight, LEO
 random_seed: 42
 device_for_phenotype_evaluation: cpu
 
@@ -40,23 +40,23 @@ include_substrate_bias_node: true
 substrate_node_activation_function: steepened_sigmoid
 max_substrate_connection_weight_magnitude: 3.0
 
-# Reguła ekspresji i zaszczepienie lokalnością.
-#   LEO = tanh(g * exp(-(w * d)^2) + b),  wyrażone gdy LEO >= 0,
-#   czyli gdy |d| <= sqrt(ln(g / -b)) / w = 1.388
-# gdzie d to różnica współrzędnych x, liczona WEWNĄTRZ CPPN-a przez podanie x1
-# i x2 do węzła gaussowskiego z wagami -w i +w. Dlatego CPPN nie potrzebuje
-# osobnego wejścia na deltę i zostaje przy czterech wejściach HyperNEAT-a.
+# Expression rule and locality seeding.
+#   LEO = tanh(g * exp(-(w * d)^2) + b),  expressed when LEO >= 0,
+#   i.e. when |d| <= sqrt(ln(g / -b)) / w = 1.388
+# where d is the difference of x coordinates, computed INSIDE the CPPN by feeding
+# x1 and x2 into a gaussian node with weights -w and +w. That is why the CPPN
+# needs no separate delta input and keeps HyperNEAT's four inputs.
 #
-# w = 0.6 i b = -1 pochodzą z Huizinga i in. (2014), sekcja 2.1, gdzie LEO
-# z zaszczepieniem gaussowskim jest jednym z porównywanych wariantów.
-# g nie jest w źródle podane — 2.0 stawia próg na połowie wysokości gaussianu.
+# w = 0.6 and b = -1 come from Huizinga et al. (2014), section 2.1, where LEO
+# with gaussian seeding is one of the compared variants.
+# g is not given in the source — 2.0 puts the threshold at half the gaussian's height.
 link_expression_threshold: 0.0
 locality_seed_coordinate_axes: ["x"]
 locality_seed_delta_weight: 0.6
 locality_seed_gaussian_to_leo_weight: 2.0
 locality_seed_bias_weight: -1.0
 
-# Genetyka CPPN
+# CPPN genetics
 initial_weight_range_min: -3.0
 initial_weight_range_max: 3.0
 probability_of_add_node_mutation: 0.03

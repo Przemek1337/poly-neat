@@ -1,18 +1,18 @@
-# PolyNEAT – zwykły HyperNEAT na problemie siatkówki (linia odniesienia dla LEO)
+# PolyNEAT – plain HyperNEAT on the retina problem (baseline for LEO)
 #
-# Każdy parametr genetyki CPPN jest IDENTYCZNY jak w leo.yaml — różnice sprowadzają
-# się wyłącznie do tego, czym HyperNEAT różni się od HyperNEAT-LEO:
-#   * CPPN ma 4 wejścia (x1, y1, x2, y2) i 1 wyjście (waga), bez delt i bez LEO,
-#   * o istnieniu połączenia decyduje magnituda wagi, nie osobne wyjście,
-#   * populacja startowa jest zwykła, bez zaszczepionej lokalności,
-#   * substrat opisany rozmiarami warstw, więc węzły rozkładają się RÓWNOMIERNIE.
+# Every CPPN genetics parameter is IDENTICAL to leo.yaml — the differences come
+# down solely to how HyperNEAT differs from HyperNEAT-LEO:
+#   * the CPPN has 4 inputs (x1, y1, x2, y2) and 1 output (weight), no deltas and no LEO,
+#   * a connection's existence is decided by weight magnitude, not a separate output,
+#   * the initial population is plain, without seeded locality,
+#   * the substrate is described by layer sizes, so nodes are distributed UNIFORMLY.
 #
-# Ten ostatni punkt jest celowy: linia odniesienia ma pokazać, co robi HyperNEAT
-# bez żadnej pomocy geometrycznej. HyperNEATConfig nie zna jawnych współrzędnych.
+# That last point is deliberate: the baseline is meant to show what HyperNEAT does
+# without any geometric help. HyperNEATConfig knows no explicit coordinates.
 
 population_size: 150
 number_of_input_nodes: 4      # x1, y1, x2, y2
-number_of_output_nodes: 1     # waga
+number_of_output_nodes: 1     # weight
 random_seed: 42
 device_for_phenotype_evaluation: cpu
 
@@ -28,7 +28,7 @@ substrate_node_activation_function: steepened_sigmoid
 weight_expression_threshold: 0.2
 max_substrate_connection_weight_magnitude: 3.0
 
-# Genetyka CPPN — identyczna z leo.yaml
+# CPPN genetics — identical to leo.yaml
 initial_weight_range_min: -3.0
 initial_weight_range_max: 3.0
 probability_of_add_node_mutation: 0.03
