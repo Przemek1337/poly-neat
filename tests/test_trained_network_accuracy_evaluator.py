@@ -122,15 +122,43 @@ def test_same_phenotype_and_seed_give_the_same_result_twice() -> None:
     genome = _dense_with_batch_norm_genome()
     decoder = _flat_decoder(number_of_features=4)
 
+    # Deliberately construct from different global RNG states. The evaluator,
+    # not the caller/decoder, owns the fresh initialization seed.
     torch.manual_seed(123)
     phenotype_one = decoder.build_phenotype_from_genome(genome)
     fitness_one = _evaluator(base_random_seed=7).evaluate_batch_of_phenotypes([phenotype_one])[0]
 
-    torch.manual_seed(123)
+    torch.manual_seed(987654)
     phenotype_two = decoder.build_phenotype_from_genome(genome)
     fitness_two = _evaluator(base_random_seed=7).evaluate_batch_of_phenotypes([phenotype_two])[0]
 
     assert fitness_one == fitness_two
+    assert all(
+        torch.equal(first.detach(), second.detach())
+        for first, second in zip(
+            phenotype_one.parameters(), phenotype_two.parameters(), strict=True
+        )
+    )
+
+
+def test_identical_genomes_receive_common_random_numbers_independent_of_position() -> None:
+    genome = _dense_with_batch_norm_genome()
+    decoder = _flat_decoder(number_of_features=4)
+    torch.manual_seed(1)
+    first = decoder.build_phenotype_from_genome(genome)
+    torch.manual_seed(2)
+    second = decoder.build_phenotype_from_genome(genome)
+
+    evaluator = _evaluator(base_random_seed=17)
+    fitnesses = evaluator.evaluate_batch_of_phenotypes([first, second])
+
+    assert fitnesses[0] == fitnesses[1]
+    assert all(
+        torch.equal(first_parameter.detach(), second_parameter.detach())
+        for first_parameter, second_parameter in zip(
+            first.parameters(), second.parameters(), strict=True
+        )
+    )
 
 
 def test_fitness_is_within_the_unit_interval() -> None:

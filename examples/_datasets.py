@@ -82,6 +82,74 @@ class ClassificationDataset:
         return int(self.train_features.shape[1])
 
 
+def build_dataset_from_official_splits(
+    train_features: torch.Tensor,
+    train_labels: torch.Tensor,
+    test_features: torch.Tensor,
+    test_labels: torch.Tensor,
+    *,
+    random_seed: int,
+    max_train_samples: int | None = None,
+    max_test_samples: int | None = None,
+    number_of_classes: int | None = None,
+) -> ClassificationDataset:
+    """Keep an upstream dataset's official split and optionally subsample it.
+
+    Unlike :func:`split_features_and_labels`, this helper never mixes official
+    test rows back into the training pool.  It is the correct entry point for
+    benchmark datasets such as MNIST, Fashion-MNIST and CIFAR-10, whose
+    distributions already provide a canonical held-out test set.
+    """
+    if train_features.shape[0] != train_labels.shape[0]:
+        raise ValueError("train features/labels sample counts do not match")
+    if test_features.shape[0] != test_labels.shape[0]:
+        raise ValueError("test features/labels sample counts do not match")
+
+    subset_rng = np.random.default_rng(random_seed)
+    train_indices = np.arange(train_labels.shape[0])
+    test_indices = np.arange(test_labels.shape[0])
+    if max_train_samples is not None and len(train_indices) > max_train_samples:
+        train_indices = subset_rng.choice(
+            train_indices, size=max_train_samples, replace=False
+        )
+    if max_test_samples is not None and len(test_indices) > max_test_samples:
+        test_indices = subset_rng.choice(test_indices, size=max_test_samples, replace=False)
+
+    if number_of_classes is None:
+        all_labels = torch.cat([train_labels, test_labels])
+        number_of_classes = int(all_labels.max()) + 1
+
+    return ClassificationDataset(
+        train_features=train_features[train_indices].to(torch.float32),
+        train_labels=train_labels[train_indices].to(torch.long),
+        test_features=test_features[test_indices].to(torch.float32),
+        test_labels=test_labels[test_indices].to(torch.long),
+        number_of_classes=number_of_classes,
+    )
+
+
+def standardize_feature_splits_from_training_statistics(
+    train_features: torch.Tensor,
+    *other_feature_splits: torch.Tensor,
+) -> tuple[torch.Tensor, ...]:
+    """Fit element-wise standardization on train and transform every split.
+
+    The batch dimension is the only reduced dimension.  Consequently this is
+    usable for both flattened ``[N, F]`` inputs and image tensors
+    ``[N, C, H, W]``.  Validation and test values never influence the fitted
+    mean or standard deviation.
+    """
+    if train_features.shape[0] < 1:
+        raise ValueError("cannot fit standardization on an empty training split")
+    train_features = train_features.to(torch.float32)
+    training_mean = train_features.mean(dim=0, keepdim=True)
+    training_std = train_features.std(dim=0, unbiased=False, keepdim=True) + 1e-6
+    return tuple(
+        (feature_split.to(torch.float32) - training_mean) / training_std
+        for feature_split in (train_features, *other_feature_splits)
+    )
+
+
 def split_features_and_labels(
     features: torch.Tensor,
     labels: torch.Tensor,

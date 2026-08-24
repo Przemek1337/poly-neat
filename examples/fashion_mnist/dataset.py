@@ -24,15 +24,16 @@ import torch
 
 from examples._datasets import (
     ClassificationDataset,
+    build_dataset_from_official_splits,
     download_file_if_missing,
-    split_features_and_labels,
+    standardize_feature_splits_from_training_statistics,
 )
 
 # Reused rather than duplicated: verbatim duplication of a logic block is an
 # explicit defect in this project's review rubric, and a private-name import
 # between sibling example modules is the lesser smell. Both helpers are
 # shape-agnostic beyond "28x28 uint8 images", which Fashion-MNIST also is.
-from examples.mnist.dataset import _standardize_features, pool_features_to_grid
+from examples.mnist.dataset import pool_features_to_grid
 
 _FASHION_MNIST_DATA_DIR = Path(__file__).parent / "data"
 _FASHION_MNIST_BASE_URL = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/"
@@ -104,15 +105,25 @@ def _load_idx_archive(file_name: str) -> np.ndarray:
     return read_idx_gz_file(archive_path)
 
 
+def _load_fashion_mnist_canonical_arrays(
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return official Fashion-MNIST train/test arrays without mixing them."""
+    return (
+        _load_idx_archive(_FASHION_MNIST_TRAIN_IMAGES_FILE_NAME),
+        _load_idx_archive(_FASHION_MNIST_TRAIN_LABELS_FILE_NAME).astype(np.int64),
+        _load_idx_archive(_FASHION_MNIST_TEST_IMAGES_FILE_NAME),
+        _load_idx_archive(_FASHION_MNIST_TEST_LABELS_FILE_NAME).astype(np.int64),
+    )
+
+
 def load_fashion_mnist_features_and_labels(
     grid_side: int = 7,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Load the whole Fashion-MNIST dataset, pooled to ``grid_side`` and standardized.
 
-    The train and test archives are concatenated into one
-    ``(features, labels)`` pair, mirroring
-    :func:`examples.mnist.dataset.load_mnist_features_and_labels`; the split
-    is drawn later by :func:`load_fashion_mnist` / ``split_features_and_labels``.
+    This compatibility helper concatenates its return value, but fits
+    standardization on official train only. :func:`load_fashion_mnist`
+    preserves the canonical split in its returned dataset.
 
     Args:
         grid_side: Side length of the pooled grid; must divide 28.
@@ -123,19 +134,17 @@ def load_fashion_mnist_features_and_labels(
         ``[70000, grid_side ** 2]`` float tensor and labels is a ``[70000]``
         long tensor holding class indices 0-9.
     """
-    train_images = _load_idx_archive(_FASHION_MNIST_TRAIN_IMAGES_FILE_NAME)
-    train_labels = _load_idx_archive(_FASHION_MNIST_TRAIN_LABELS_FILE_NAME)
-    test_images = _load_idx_archive(_FASHION_MNIST_TEST_IMAGES_FILE_NAME)
-    test_labels = _load_idx_archive(_FASHION_MNIST_TEST_LABELS_FILE_NAME)
-
-    images = np.concatenate([train_images, test_images], axis=0)
-    labels = np.concatenate([train_labels, test_labels]).astype(np.int64)
-
-    pooled = pool_features_to_grid(images, grid_side)
-    standardized = _standardize_features(pooled)
+    train_images, train_labels, test_images, test_labels = (
+        _load_fashion_mnist_canonical_arrays()
+    )
+    train_pooled = pool_features_to_grid(train_images, grid_side)
+    test_pooled = pool_features_to_grid(test_images, grid_side)
+    train_standardized, test_standardized = standardize_feature_splits_from_training_statistics(
+        torch.from_numpy(train_pooled), torch.from_numpy(test_pooled)
+    )
     return (
-        torch.from_numpy(standardized).to(torch.float32),
-        torch.from_numpy(labels),
+        torch.cat([train_standardized, test_standardized]),
+        torch.from_numpy(np.concatenate([train_labels, test_labels])),
     )
 
 
@@ -146,33 +155,52 @@ def load_fashion_mnist(
     grid_side: int = 7,
     max_train_samples: int | None = 3000,
     max_test_samples: int | None = 2000,
+    standardize: bool = True,
 ) -> ClassificationDataset:
-    """Load Fashion-MNIST, pool it to a small grid and split it into a bundle.
+    """Load Fashion-MNIST while preserving its official train/test split.
 
     The aligned top-level entrypoint, matching :func:`examples.mnist.dataset.load_mnist`
-    in shape and return type. Vanilla NEAT grows topology from a minimal
-    start, so the raw 28x28 images are pooled down to keep the search space
-    tractable, and the split is optionally subsampled to keep evaluation fast.
+    in shape and return type. Optional caps sample independently inside the
+    canonical train and test partitions.
 
     Args:
-        train_fraction: Share of samples assigned to training.
+        train_fraction: Deprecated compatibility argument. The official split
+            is always preserved and this value is ignored.
         random_seed: Seed for the split and the subset draw.
         grid_side: Side length of the pooled grid; must divide 28.
         max_train_samples: Cap on training rows after the split; ``None`` keeps
             the whole training split.
         max_test_samples: Cap on test rows after the split.
+        standardize: Fit normalization only on selected official training
+            rows. DeepNEAT disables it and fits after creating validation.
 
     Returns:
         A :class:`ClassificationDataset` with ``grid_side ** 2`` features and 10
         classes.
     """
-    features, labels = load_fashion_mnist_features_and_labels(grid_side)
-    return split_features_and_labels(
-        features,
-        labels,
-        train_fraction=train_fraction,
+    del train_fraction
+    train_images, train_labels, test_images, test_labels = (
+        _load_fashion_mnist_canonical_arrays()
+    )
+    dataset = build_dataset_from_official_splits(
+        torch.from_numpy(pool_features_to_grid(train_images, grid_side)),
+        torch.from_numpy(train_labels),
+        torch.from_numpy(pool_features_to_grid(test_images, grid_side)),
+        torch.from_numpy(test_labels),
         random_seed=random_seed,
         max_train_samples=max_train_samples,
         max_test_samples=max_test_samples,
         number_of_classes=_FASHION_MNIST_NUMBER_OF_CLASSES,
+    )
+    if not standardize:
+        return dataset
+    standardized_train, standardized_test = standardize_feature_splits_from_training_statistics(
+        dataset.train_features, dataset.test_features
+    )
+    return ClassificationDataset(
+        train_features=standardized_train,
+        train_labels=dataset.train_labels,
+        test_features=standardized_test,
+        test_labels=dataset.test_labels,
+        number_of_classes=dataset.number_of_classes,
     )

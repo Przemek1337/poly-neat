@@ -71,9 +71,9 @@ def synthetic_fashion_mnist_archives(
     """
     train_count, test_count = 40, 20
     rng = np.random.default_rng(1234)
-    train_images = rng.integers(0, 256, size=(train_count, 28, 28), dtype=np.uint8)
+    train_images = rng.integers(0, 128, size=(train_count, 28, 28), dtype=np.uint8)
     train_labels = (np.arange(train_count) % 10).astype(np.uint8)
-    test_images = rng.integers(0, 256, size=(test_count, 28, 28), dtype=np.uint8)
+    test_images = rng.integers(128, 256, size=(test_count, 28, 28), dtype=np.uint8)
     test_labels = (np.arange(test_count) % 10).astype(np.uint8)
 
     def _images_bytes(images: np.ndarray) -> bytes:
@@ -119,7 +119,7 @@ def test_load_features_and_labels_pools_and_concatenates_train_and_test(
     assert labels.dtype == torch.long
 
 
-def test_load_features_and_labels_standardizes_every_feature(
+def test_load_features_and_labels_fits_standardization_on_official_train_only(
     synthetic_fashion_mnist_archives: dict[str, int],
 ) -> None:
     """Guard the standardization step, which shape assertions alone cannot see.
@@ -129,13 +129,17 @@ def test_load_features_and_labels_standardizes_every_feature(
     from the loader passes every other test in this file.
     """
     features, _ = load_fashion_mnist_features_and_labels(grid_side=7)
+    official_train_size = synthetic_fashion_mnist_archives["train_count"]
+    train_features = features[:official_train_size]
+    test_features = features[official_train_size:]
 
-    per_feature_mean = features.mean(dim=0)
-    per_feature_std = features.std(dim=0, unbiased=False)
+    per_feature_mean = train_features.mean(dim=0)
+    per_feature_std = train_features.std(dim=0, unbiased=False)
 
     assert per_feature_mean.abs().max().item() == pytest.approx(0.0, abs=1e-4)
     assert per_feature_std.min().item() == pytest.approx(1.0, abs=1e-3)
     assert per_feature_std.max().item() == pytest.approx(1.0, abs=1e-3)
+    assert test_features.mean().item() > 1.0
 
 
 def test_load_fashion_mnist_reports_ten_classes(
@@ -162,21 +166,15 @@ def test_load_fashion_mnist_is_reproducible_for_a_fixed_seed(
     assert torch.equal(first.test_labels, second.test_labels)
 
 
-def test_load_fashion_mnist_default_split_sizes_match_the_full_synthetic_set(
+def test_load_fashion_mnist_preserves_the_official_split_sizes(
     synthetic_fashion_mnist_archives: dict[str, int],
 ) -> None:
-    total = (
-        synthetic_fashion_mnist_archives["train_count"]
-        + synthetic_fashion_mnist_archives["test_count"]
-    )
-
     dataset = load_fashion_mnist(
         random_seed=1, max_train_samples=None, max_test_samples=None
     )
 
-    expected_train_size = int((6 / 7) * total)
-    assert dataset.train_features.shape[0] == expected_train_size
-    assert dataset.test_features.shape[0] == total - expected_train_size
+    assert dataset.train_features.shape[0] == synthetic_fashion_mnist_archives["train_count"]
+    assert dataset.test_features.shape[0] == synthetic_fashion_mnist_archives["test_count"]
 
 
 def test_load_fashion_mnist_honours_the_sample_caps(

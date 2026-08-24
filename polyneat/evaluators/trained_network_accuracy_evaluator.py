@@ -40,11 +40,9 @@ from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
-# Large, mutually coprime-ish multipliers keep the per-phenotype seed derived
-# from (base seed, generation counter, position in batch) well spread across
-# torch.manual_seed's range, so the three inputs' low bits do not collide.
+# A fresh seed per generation gives every architecture common random numbers:
+# evaluation order and population position cannot change its initialization.
 _GENERATION_SEED_MULTIPLIER = 1_000_003
-_POSITION_SEED_MULTIPLIER = 7_919
 
 
 class TrainedNetworkAccuracyEvaluator:
@@ -53,14 +51,14 @@ class TrainedNetworkAccuracyEvaluator:
     Implements the ``FitnessEvaluator`` protocol
     (:class:`~polyneat.core.component_protocols.FitnessEvaluator`) directly
     rather than through ``SequentialFitnessEvaluator``: that base class maps a
-    per-phenotype method over the batch and cannot express the two things this
-    evaluator needs across the whole batch -- a generation counter bumped
-    exactly once per call, and a random seed derived from each phenotype's
-    position within the batch so a phenotype's fitness does not depend on
-    where in the batch it happens to sit.
+    per-phenotype method over the batch and cannot express the generation
+    counter that must be bumped exactly once per call. Every phenotype in one
+    generation receives the same derived seed (common random numbers), so its
+    initialization and minibatch order do not depend on population position.
 
     For each non-degenerate phenotype, in order: seed the RNG from
-    ``(base_random_seed, generation_counter, position_in_batch)``; train with
+    ``(base_random_seed, generation_counter)``; reinitialize all trainable
+    layers and normalization buffers; train with
     Adam and cross-entropy loss for ``number_of_epochs`` passes over shuffled
     minibatches of the training set; switch to evaluation mode and measure
     accuracy on the validation set in minibatches, under ``torch.no_grad()``.
@@ -246,9 +244,16 @@ class TrainedNetworkAccuracyEvaluator:
             derived_seed = (
                 self._base_random_seed
                 + self._generation_counter * _GENERATION_SEED_MULTIPLIER
-                + position_in_batch * _POSITION_SEED_MULTIPLIER
             )
             torch.manual_seed(derived_seed)
+            reinitialize_parameters = getattr(phenotype, "reinitialize_parameters", None)
+            if not callable(reinitialize_parameters):
+                raise TypeError(
+                    "TrainedNetworkAccuracyEvaluator requires non-degenerate phenotypes "
+                    "to implement reinitialize_parameters() so training really starts "
+                    "from the derived seed"
+                )
+            reinitialize_parameters()
 
             self._train_phenotype(phenotype)
             accuracy = self._measure_validation_accuracy(phenotype)

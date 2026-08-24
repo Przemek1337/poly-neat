@@ -74,6 +74,24 @@ def test_training_block_is_validated() -> None:
         DeepNEATConfig(training_batch_size=0)
 
 
+@pytest.mark.parametrize(
+    "keyword_arguments",
+    [
+        {"number_of_generations": 0},
+        {"final_training_epochs": 0},
+        {"maximum_training_samples": 1},
+        {"maximum_test_samples": 1},
+        {"validation_fraction": 0.0},
+        {"validation_fraction": 1.0},
+    ],
+)
+def test_example_protocol_fields_are_validated(
+    keyword_arguments: dict[str, int | float],
+) -> None:
+    with pytest.raises(ConfigurationError):
+        DeepNEATConfig(**keyword_arguments)
+
+
 def test_unknown_yaml_key_is_rejected() -> None:
     with pytest.raises(ConfigurationError):
         DeepNEATConfig.from_dict({"not_a_real_field": 1})

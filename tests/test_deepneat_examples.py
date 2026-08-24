@@ -51,6 +51,7 @@ def _synthetic_deepneat_dataset(
     grid_side: int = _SYNTHETIC_GRID_SIDE,
     max_train_samples: int | None = None,
     max_test_samples: int | None = None,
+    standardize: bool = True,
 ) -> ClassificationDataset:
     """Stand in for ``load_mnist``/``load_fashion_mnist`` with the same shape.
 
@@ -58,6 +59,7 @@ def _synthetic_deepneat_dataset(
     ``examples/mnist/dataset.py`` and ``examples/fashion_mnist/dataset.py``),
     so the example's call site is exercised without touching either dataset.
     """
+    del standardize
     rng = np.random.default_rng(random_seed)
     number_of_features = grid_side * grid_side
     total = _SYNTHETIC_TRAIN_SIZE + _SYNTHETIC_TEST_SIZE
@@ -87,6 +89,7 @@ def shrunk_deepneat_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         config = original_load(cls, yaml_file_path)
         config.population_size = _SHRUNK_POPULATION_SIZE
         config.training_epochs_per_evaluation = _SHRUNK_TRAINING_EPOCHS
+        config.final_training_epochs = 1
         return config
 
     monkeypatch.setattr(AlgorithmConfig, "load_from_yaml_file", classmethod(load_and_shrink))

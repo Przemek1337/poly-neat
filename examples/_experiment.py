@@ -34,6 +34,8 @@ def print_experiment_report(report: ExperimentReport) -> None:
 
 
 EXAMPLE_REGISTRY: dict[str, str] = {
+    "cifar10/deepneat_paper": "examples.cifar10.deepneat_paper",
+    "cifar10/deepneat_smoke": "examples.cifar10.deepneat_smoke",
     "fashion_mnist/deepneat": "examples.fashion_mnist.deepneat",
     "iris/cneat": "examples.iris.cneat",
     "iris/lneat": "examples.iris.lneat",

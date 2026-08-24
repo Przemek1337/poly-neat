@@ -325,5 +325,23 @@ class TorchLayerStackPhenotype(nn.Module):
         """``nn.Module`` compatibility shim — delegates to ``forward_pass``."""
         return self.forward_pass(x)
 
+    def reinitialize_parameters(self) -> None:
+        """Reset every trainable layer and normalization buffer in place.
+
+        Phenotypes are constructed by the generic evolution runner before the
+        fitness evaluator derives its per-generation seed.  Resetting here,
+        after that seed has been installed, makes initial weights part of the
+        evaluator's reproducibility contract instead of an accidental product
+        of the global RNG state during phenotype decoding.
+        """
+        if self.is_degenerate:
+            return
+        for module in self.modules():
+            if module is self:
+                continue
+            reset_parameters = getattr(module, "reset_parameters", None)
+            if callable(reset_parameters):
+                reset_parameters()
+
     def reset_recurrent_state(self) -> None:
         return None

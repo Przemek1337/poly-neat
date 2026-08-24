@@ -69,6 +69,7 @@ def _synthetic_mnist_dataset(
     grid_side: int = 7,
     max_train_samples: int | None = 3000,
     max_test_samples: int | None = 2000,
+    standardize: bool = True,
 ) -> ClassificationDataset:
     """Stand in for ``load_mnist`` with the same signature and return type.
 
@@ -76,6 +77,7 @@ def _synthetic_mnist_dataset(
     is to run the pipeline, not to train. The real ``split_features_and_labels``
     still does the splitting and subsetting.
     """
+    del standardize
     rng = np.random.default_rng(random_seed)
     number_of_features = grid_side * grid_side
     total = _MNIST_SMOKE_TRAIN_SIZE + _MNIST_SMOKE_TEST_SIZE
@@ -88,6 +90,31 @@ def _synthetic_mnist_dataset(
         random_seed=random_seed,
         max_train_samples=min(max_train_samples or total, _MNIST_SMOKE_TRAIN_SIZE),
         max_test_samples=min(max_test_samples or total, _MNIST_SMOKE_TEST_SIZE),
+        number_of_classes=_MNIST_CLASS_COUNT,
+    )
+
+
+def _synthetic_cifar10_dataset(
+    *,
+    random_seed: int,
+    max_train_samples: int | None = None,
+    max_test_samples: int | None = None,
+    standardize: bool = True,
+) -> ClassificationDataset:
+    """Small official-split-shaped replacement for the CIFAR-10 loader."""
+    del max_train_samples, max_test_samples, standardize
+    rng = np.random.default_rng(random_seed)
+    train_features = torch.from_numpy(
+        rng.standard_normal((64, 3 * 32 * 32), dtype=np.float32)
+    )
+    test_features = torch.from_numpy(
+        rng.standard_normal((32, 3 * 32 * 32), dtype=np.float32)
+    )
+    return ClassificationDataset(
+        train_features=train_features,
+        train_labels=torch.arange(64) % _MNIST_CLASS_COUNT,
+        test_features=test_features,
+        test_labels=torch.arange(32) % _MNIST_CLASS_COUNT,
         number_of_classes=_MNIST_CLASS_COUNT,
     )
 
@@ -108,6 +135,10 @@ def _shrink_loaded_config(config: AlgorithmConfig) -> AlgorithmConfig:
         config.number_of_training_epochs_per_genome = 1
     if hasattr(config, "training_batch_size"):
         config.training_batch_size = 16
+    if hasattr(config, "training_epochs_per_evaluation"):
+        config.training_epochs_per_evaluation = 1
+    if hasattr(config, "final_training_epochs"):
+        config.final_training_epochs = 1
     return config
 
 
@@ -153,6 +184,10 @@ def _redirect_dataset_loaders(
         monkeypatch.setattr(example_module, "load_iris", _synthetic_iris_dataset)
     if hasattr(example_module, "load_mnist"):
         monkeypatch.setattr(example_module, "load_mnist", _synthetic_mnist_dataset)
+    if example_module.__name__.startswith("examples.cifar10."):
+        monkeypatch.setattr(
+            "examples.cifar10._deepneat.load_cifar10", _synthetic_cifar10_dataset
+        )
 
 
 @pytest.mark.parametrize("example_id", sorted(EXAMPLE_REGISTRY))
@@ -168,6 +203,20 @@ def test_example_run_experiment_completes_and_writes_artifacts(
     report = example_module.run_experiment(artifacts_directory=tmp_path)
 
     assert report.metric_values, f"{example_id} reported no metrics"
+    if example_id.startswith("cifar10/deepneat_"):
+        test_error = 1.0 - report.metric_values["test_accuracy"]
+        assert report.metric_values["test_error"] == pytest.approx(test_error)
+        assert report.metric_values["paper_reference_test_error"] == 0.089
+        assert report.metric_values[
+            "test_error_gap_to_paper_percentage_points"
+        ] == pytest.approx(100.0 * (test_error - 0.089))
+        assert report.metric_values["evolution_runtime_seconds"] >= 0.0
+        assert report.metric_values["final_training_runtime_seconds"] >= 0.0
+        assert (
+            report.metric_values["evolution_runtime_seconds"]
+            + report.metric_values["final_training_runtime_seconds"]
+            <= report.runtime_seconds
+        )
     assert report.number_of_generations >= 1
     assert report.runtime_seconds >= 0.0
     written_files = [path for path in tmp_path.rglob("*") if path.is_file()]

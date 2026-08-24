@@ -49,6 +49,11 @@ class DeepNEATConfig(NEATConfig):
         training_batch_size: Minibatch size used during evaluation.
         use_deterministic_training_algorithms: Whether to request deterministic
             cuDNN kernels. Costs throughput; off by default.
+        number_of_generations: Number of populations evaluated by examples.
+        final_training_epochs: Epochs used to retrain the selected architecture.
+        maximum_training_samples: Optional cap inside the official train split.
+        maximum_test_samples: Optional cap inside the official test split.
+        validation_fraction: Fraction carved from official train for fitness.
     """
 
     input_image_channels: int = 1
@@ -74,6 +79,12 @@ class DeepNEATConfig(NEATConfig):
     training_learning_rate: float = 1e-3
     training_batch_size: int = 128
     use_deterministic_training_algorithms: bool = False
+
+    number_of_generations: int = 25
+    final_training_epochs: int = 20
+    maximum_training_samples: int | None = 1_500
+    maximum_test_samples: int | None = 1_000
+    validation_fraction: float = 0.2
 
     def validate(self) -> None:
         """Validate the DeepNEAT fields on top of the inherited NEAT checks.
@@ -154,4 +165,26 @@ class DeepNEATConfig(NEATConfig):
         if self.training_batch_size < 1:
             raise ConfigurationError(
                 f"training_batch_size must be >= 1, got {self.training_batch_size}"
+            )
+        if self.number_of_generations < 1:
+            raise ConfigurationError(
+                f"number_of_generations must be >= 1, got {self.number_of_generations}"
+            )
+        if self.final_training_epochs < 1:
+            raise ConfigurationError(
+                f"final_training_epochs must be >= 1, got {self.final_training_epochs}"
+            )
+        for sample_cap_field_name in (
+            "maximum_training_samples",
+            "maximum_test_samples",
+        ):
+            sample_cap = getattr(self, sample_cap_field_name)
+            if sample_cap is not None and sample_cap < 2:
+                raise ConfigurationError(
+                    f"{sample_cap_field_name} must be >= 2 or null, got {sample_cap}"
+                )
+        if not (0.0 < self.validation_fraction < 1.0):
+            raise ConfigurationError(
+                f"validation_fraction must be in (0.0, 1.0), got "
+                f"{self.validation_fraction}"
             )

@@ -10,7 +10,7 @@ from examples._datasets import (
     split_features_and_labels,
     split_indices_into_train_and_test,
 )
-from examples.mnist.dataset import pool_features_to_grid
+from examples.mnist.dataset import load_mnist, pool_features_to_grid
 
 
 def test_split_returns_disjoint_indices_covering_every_sample() -> None:
@@ -164,3 +164,38 @@ def test_full_resolution_grid_keeps_every_pixel() -> None:
     pooled = pool_features_to_grid(images, grid_side=28)
 
     assert pooled.shape == (3, 784)
+
+
+def test_mnist_loader_preserves_official_split_and_uses_train_statistics(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rng = np.random.default_rng(77)
+    train_images = rng.integers(0, 128, size=(12, 28, 28), dtype=np.uint8)
+    train_labels = np.arange(12, dtype=np.uint8) % 10
+    test_images = rng.integers(128, 256, size=(5, 28, 28), dtype=np.uint8)
+    test_labels = np.arange(5, dtype=np.uint8) % 10
+    archive_path = tmp_path / "mnist.npz"
+    np.savez(
+        archive_path,
+        x_train=train_images,
+        y_train=train_labels,
+        x_test=test_images,
+        y_test=test_labels,
+    )
+    monkeypatch.setattr(
+        "examples.mnist.dataset.download_file_if_missing",
+        lambda _source_url, _destination_path: archive_path,
+    )
+
+    dataset = load_mnist(
+        random_seed=3,
+        grid_side=28,
+        max_train_samples=None,
+        max_test_samples=None,
+        standardize=True,
+    )
+
+    assert dataset.train_features.shape == (12, 784)
+    assert dataset.test_features.shape == (5, 784)
+    assert dataset.train_features.mean().item() == pytest.approx(0.0, abs=1e-5)
+    assert dataset.test_features.mean().item() > 1.0

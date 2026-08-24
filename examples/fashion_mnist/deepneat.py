@@ -33,7 +33,10 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._datasets import split_indices_into_train_and_test
+from examples._datasets import (
+    split_indices_into_train_and_test,
+    standardize_feature_splits_from_training_statistics,
+)
 from examples._experiment import ExperimentReport
 from examples._run import run_example_main
 
@@ -47,12 +50,7 @@ _ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "deepneat"
 
 GRID = 28  # full resolution: DeepNEAT layers operate on the raw image
 
-TRAINING_SUBSET_SIZE = 1500
-TEST_SUBSET_SIZE = 1000
-
 _SUBSET_SAMPLING_SEED = 12345
-_VALIDATION_FRACTION = 0.2
-_FINAL_TRAINING_EPOCHS = 20
 
 
 def run_experiment(
@@ -74,11 +72,13 @@ def run_experiment(
         Validation accuracy, test accuracy, layer count and parameter count
         of the best evolved network.
     """
+    config = pn.DeepNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
     dataset = load_mnist(
         random_seed=_SUBSET_SAMPLING_SEED,
         grid_side=GRID,
-        max_train_samples=TRAINING_SUBSET_SIZE,
-        max_test_samples=TEST_SUBSET_SIZE,
+        max_train_samples=config.maximum_training_samples,
+        max_test_samples=config.maximum_test_samples,
+        standardize=False,
     )
     print(
         f"Fashion-MNIST loaded: {dataset.train_features.shape[0]} train / "
@@ -86,7 +86,6 @@ def run_experiment(
         f"samples, {GRID}x{GRID} images, {dataset.number_of_classes} classes."
     )
 
-    config = pn.DeepNEATConfig.load_from_yaml_file(CONFIG_FILE_PATH)
     config.number_of_classes = dataset.number_of_classes
     config.number_of_output_nodes = dataset.number_of_classes
     # Keep the config's declared input geometry tied to the grid this module
@@ -102,17 +101,15 @@ def run_experiment(
     resolved_device = device or torch.device(config.device_for_phenotype_evaluation)
     resolved_random_seed = config.random_seed if random_seed is None else random_seed
 
-    # Seed torch's global RNG here, not only inside the evaluator: the first
-    # phenotypes are decoded and their weights initialised before any
-    # per-phenotype seeding runs, so without this the reported architecture
-    # and parameter count differ between two runs of the same seed.
+    # The evaluator reinitializes every phenotype from its generation seed.
+    # This outer seed covers any other torch randomness around the run.
     torch.manual_seed(resolved_random_seed)
 
     # Carve a fixed validation slice out of the training rows; fitness comes
     # from it, never from the test split, which stays untouched by evolution.
     train_indices, validation_indices = split_indices_into_train_and_test(
         number_of_samples=dataset.train_features.shape[0],
-        train_fraction=1.0 - _VALIDATION_FRACTION,
+        train_fraction=1.0 - config.validation_fraction,
         random_seed=_SUBSET_SAMPLING_SEED,
     )
     all_train_images = dataset.train_features.reshape(-1, 1, GRID, GRID)
@@ -122,6 +119,11 @@ def run_experiment(
     validation_labels = dataset.train_labels[validation_indices]
     test_features = dataset.test_features.reshape(-1, 1, GRID, GRID)
     test_labels = dataset.test_labels
+    train_features, validation_features, test_features = (
+        standardize_feature_splits_from_training_statistics(
+            train_features, validation_features, test_features
+        )
+    )
 
     fitness_evaluator = pn.TrainedNetworkAccuracyEvaluator(
         train_features=train_features,
@@ -149,7 +151,9 @@ def run_experiment(
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
         fitness_evaluator=fitness_evaluator,
-        termination_criterion=pn.MaxGenerationsTermination(max_generations=25),
+        termination_criterion=pn.MaxGenerationsTermination(
+            max_generations=config.number_of_generations - 1
+        ),
         callbacks=callbacks,
         random_seed=resolved_random_seed,
     )
@@ -170,7 +174,7 @@ def run_experiment(
         train_labels=final_training_labels,
         validation_features=test_features,
         validation_labels=test_labels,
-        number_of_epochs=_FINAL_TRAINING_EPOCHS,
+        number_of_epochs=config.final_training_epochs,
         learning_rate=config.training_learning_rate,
         batch_size=config.training_batch_size,
         device_for_computation=resolved_device,
