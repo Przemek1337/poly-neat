@@ -1,0 +1,51 @@
+# PolyNEAT - Fashion-MNIST DeepNEAT configuration.
+# Evolves layer-level CNN topology over full-resolution 28x28 Fashion-MNIST
+# images (Miikkulainen et al., 2017). Fashion-MNIST is shape-identical to
+# MNIST (28x28 grayscale, 10 classes), so this file is otherwise identical to
+# examples/mnist/deepneat.yaml. number_of_classes and number_of_output_nodes
+# are overridden at runtime by examples/fashion_mnist/deepneat.py from the
+# dataset. device_for_phenotype_evaluation always ships as cpu; run with
+# --gpu to use a CUDA device instead (see examples/_example_cli.py's
+# resolve_device).
+
+population_size: 30
+number_of_input_nodes: 1
+number_of_output_nodes: 10
+number_of_classes: 10
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+# Input image geometry (the single input node's tensor shape)
+input_image_channels: 1
+input_image_height: 28
+input_image_width: 28
+
+# Training each genome is trained from scratch during fitness evaluation
+# (section on evaluation; DeepNEAT genomes carry no weights between
+# generations)
+training_epochs_per_evaluation: 2
+training_learning_rate: 0.001
+training_batch_size: 128
+use_deterministic_training_algorithms: false
+
+# Structural mutation-operator probabilities
+probability_of_add_layer_node_mutation: 0.15
+probability_of_add_tensor_edge_mutation: 0.15
+probability_of_toggle_tensor_edge_mutation: 0.05
+probability_of_layer_hyperparameter_mutation: 0.5
+probability_of_new_conv_layer: 0.7
+
+# Speciation: reused NEAT coefficients, with c3 weighting layer-hyperparameter
+# distance instead of a connection-weight difference
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+# Crossover
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.5
+
+# Parameter budget - the VRAM fuse; a genome whose decoded phenotype exceeds
+# this is degenerate and scores 0.0 without being trained
+maximum_total_parameter_count: 20000000

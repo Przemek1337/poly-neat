@@ -34,9 +34,11 @@ def print_experiment_report(report: ExperimentReport) -> None:
 
 
 EXAMPLE_REGISTRY: dict[str, str] = {
+    "fashion_mnist/deepneat": "examples.fashion_mnist.deepneat",
     "iris/cneat": "examples.iris.cneat",
     "iris/lneat": "examples.iris.lneat",
     "iris/neatdbm": "examples.iris.neatdbm",
+    "mnist/deepneat": "examples.mnist.deepneat",
     "mnist/exact": "examples.mnist.exact",
     "mnist/hyperneat": "examples.mnist.hyperneat",
     "mnist/neat": "examples.mnist.neat",

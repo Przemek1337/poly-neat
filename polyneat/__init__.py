@@ -11,6 +11,42 @@ from polyneat.algorithms.cneat.cneat_algorithm import CNEATAlgorithm
 from polyneat.algorithms.cneat.container_ensemble_phenotype import ContainerEnsemblePhenotype
 from polyneat.algorithms.cneat.container_progress_logger import ContainerProgressLogger
 from polyneat.algorithms.cneat.container_update_callback import ContainerUpdateCallback
+from polyneat.algorithms.deepneat.deepneat_algorithm import DeepNEATAlgorithm
+from polyneat.algorithms.deepneat.deepneat_crossover import DeepNEATCrossover
+from polyneat.algorithms.deepneat.deepneat_genome import (
+    DeepNEATGenome,
+    InvalidDeepNEATGenomeError,
+    LayerNodeGene,
+    TensorEdgeGene,
+)
+from polyneat.algorithms.deepneat.deepneat_initial_population import (
+    build_deepneat_initial_population,
+)
+from polyneat.algorithms.deepneat.deepneat_innovation_tracker import (
+    DeepNEATInnovationTracker,
+)
+from polyneat.algorithms.deepneat.deepneat_phenotype_decoder import (
+    DeepNEATPhenotypeDecoder,
+)
+from polyneat.algorithms.deepneat.deepneat_speciator import DeepNEATSpeciator
+from polyneat.algorithms.deepneat.mutations.add_layer_node_mutation import (
+    AddLayerNodeMutation,
+)
+from polyneat.algorithms.deepneat.mutations.add_tensor_edge_mutation import (
+    AddTensorEdgeMutation,
+)
+from polyneat.algorithms.deepneat.mutations.deepneat_composite_mutation import (
+    DeepNEATCompositeMutation,
+)
+from polyneat.algorithms.deepneat.mutations.layer_hyperparameter_mutation import (
+    LayerHyperparameterMutation,
+)
+from polyneat.algorithms.deepneat.mutations.toggle_tensor_edge_mutation import (
+    ToggleTensorEdgeMutation,
+)
+from polyneat.algorithms.deepneat.torch_layer_stack_phenotype import (
+    TorchLayerStackPhenotype,
+)
 from polyneat.algorithms.exact.exact_algorithm import EXACTAlgorithm
 from polyneat.algorithms.exact.exact_backpropagation_trainer import (
     EXACTBackpropagationTrainer,
@@ -91,6 +127,7 @@ from polyneat.algorithms.neatdbm.neatdbm_algorithm import NEATDBMAlgorithm
 from polyneat.configs.algorithm_config import AlgorithmConfig
 from polyneat.configs.cneat.cneat_config import CNEATConfig
 from polyneat.configs.configuration_errors import ConfigurationError
+from polyneat.configs.deepneat.deepneat_config import DeepNEATConfig
 from polyneat.configs.exact.exact_config import EXACTConfig
 from polyneat.configs.fdneat.fdneat_config import FDNEATConfig
 from polyneat.configs.hyperneat.hyperneat_config import HyperNEATConfig
@@ -146,6 +183,9 @@ from polyneat.core.population import Population
 from polyneat.core.type_aliases import FitnessValue, InnovationId, SpeciesId
 from polyneat.evaluators.parallel_evaluator_wrapper import ParallelFitnessEvaluatorWrapper
 from polyneat.evaluators.retina_evaluator import RetinaProblemEvaluator
+from polyneat.evaluators.trained_network_accuracy_evaluator import (
+    TrainedNetworkAccuracyEvaluator,
+)
 from polyneat.evaluators.xor_evaluator import XORFitnessEvaluator
 from polyneat.logging_utils.custom_logger import (
     CustomLogger,
@@ -302,4 +342,23 @@ __all__ = [
     "EXACTTrainingHyperparameters",
     "SimplexHyperparameterOptimizer",
     "build_minimal_cnn_initial_population",
+    # DeepNEAT algorithm
+    "DeepNEATConfig",
+    "DeepNEATAlgorithm",
+    "DeepNEATGenome",
+    "LayerNodeGene",
+    "TensorEdgeGene",
+    "InvalidDeepNEATGenomeError",
+    "DeepNEATCrossover",
+    "DeepNEATSpeciator",
+    "DeepNEATPhenotypeDecoder",
+    "TorchLayerStackPhenotype",
+    "DeepNEATCompositeMutation",
+    "AddLayerNodeMutation",
+    "AddTensorEdgeMutation",
+    "ToggleTensorEdgeMutation",
+    "LayerHyperparameterMutation",
+    "DeepNEATInnovationTracker",
+    "build_deepneat_initial_population",
+    "TrainedNetworkAccuracyEvaluator",
 ]
