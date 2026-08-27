@@ -1,0 +1,71 @@
+# PolyNEAT – FD-NEAT XOR-with-distractors configuration
+# Twin configuration to fsneat.yaml: the same data (2 relevant inputs
+# + 6 noise columns), the same fitness function, the same generation budget.
+# The only difference is the feature-selection strategy: FS-NEAT grows inputs
+# in, FD-NEAT starts fully connected and deletes them (Tan et al., 2012).
+# Success criterion: best_fitness >= 3.95 within 500 generations.
+
+population_size: 150
+number_of_input_nodes: 8
+number_of_output_nodes: 1
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+# FD-NEAT starts like vanilla NEAT — fully connected.
+initial_population_strategy: fully_connected
+
+# Feature-deselection operator — the only difference from NEAT.
+probability_of_deleting_input_connection: 0.05
+
+# add_connection at 0.10, identical to fsneat.yaml — here it is a REPAIR
+# mechanism, not selection: when deletion cuts input 0 or 1, without which
+# XOR cannot be solved, only it can bring them back.
+probability_of_add_node_mutation: 0.03
+probability_of_add_connection_mutation: 0.10
+
+# These two values were chosen by measurement, not by eye. A sweep over 10 seeds
+# (base-seed 0), metrics computed only over SOLVED runs, because the feature
+# count means anything only in those:
+#
+#   delete  add   solved  features  generations
+#   0.05    0.03   3/10    3.67      270.0     too little repair: a cut
+#                                              input never returns
+#   0.05    0.10   6/10    5.00       96.5     CHOSEN
+#   0.02    0.10   6/10    6.00      245.5     dominated: worse on every
+#                                              axis than the row above
+#
+# For reference, FS-NEAT on the same seeds: 10/10, 5.50 features, 158.4 gens.
+# Full data together with the configs live in benchmarks/results/xor_fdneat_*.json.
+probability_of_genome_weight_mutation: 0.80
+probability_of_weight_perturbation: 0.90
+probability_of_weight_replacement: 0.10
+probability_of_toggle_connection_enabled: 0.01
+
+# Weight initialization & perturbation
+initial_weight_range_min: -2.0
+initial_weight_range_max: 2.0
+weight_perturbation_magnitude: 0.5
+
+# Speciation (compatibility distance coefficients from the original NEAT paper)
+compatibility_distance_coefficient_excess_c1: 1.0
+compatibility_distance_coefficient_disjoint_c2: 1.0
+compatibility_distance_coefficient_weight_difference_c3: 0.4
+compatibility_distance_threshold: 3.0
+
+# Species lifecycle
+species_elitism_count: 1
+species_stagnation_generations_limit: 15
+minimum_species_size_for_elitism: 6
+
+# Crossover
+probability_of_crossover_vs_mutation_only: 0.75
+probability_of_inheriting_from_fitter_parent_for_matching_genes: 0.50
+probability_of_interspecies_mating: 0.001
+
+# Parent selection
+tournament_size_for_parent_selection: 3
+species_survival_fraction_for_reproduction: 0.2
+
+# Activation functions
+default_activation_function_for_hidden_nodes: steepened_sigmoid
+default_activation_function_for_output_nodes: steepened_sigmoid

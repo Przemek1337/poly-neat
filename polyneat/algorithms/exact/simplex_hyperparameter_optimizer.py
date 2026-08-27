@@ -17,6 +17,9 @@ from polyneat.algorithms.exact.exact_training_hyperparameters import (
     EXACTTrainingHyperparameters,
 )
 from polyneat.configs.exact.exact_config import EXACTConfig
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 # Per-hyperparameter bounds (section VIII-B1's initial ranges). Values are
 # clamped here for the whole search; the paper's later widening of these
@@ -123,6 +126,11 @@ class SimplexHyperparameterOptimizer:
             if hyperparameters is not best_hyperparameters
         ]
         random_line_position = (float(rng.random()) * self.line_scale) - self.line_offset
+        logger.debug(
+            "Simplex step: r=%.3f over %d candidate hyperparameter vectors",
+            random_line_position,
+            len(candidate_hyperparameters_with_fitness),
+        )
 
         best_values = dataclasses.asdict(best_hyperparameters)
         new_values: dict[str, float] = {}

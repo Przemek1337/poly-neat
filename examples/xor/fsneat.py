@@ -26,9 +26,10 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._example_cli import parse_device_from_cli
-from examples._experiment import ExperimentReport, print_experiment_report
+from examples._experiment import ExperimentReport
+from examples._run import run_example_main
 from polyneat.evaluators.xor_with_distractors_evaluator import XORWithDistractorsEvaluator
+from polyneat.nn.topology_utilities import find_node_ids_with_enabled_path_to_any_target
 
 CONFIG_FILE_PATH = Path(__file__).parent / "fsneat.yaml"
 _ARTIFACTS_DIR = Path(__file__).parent / "artifacts" / "fsneat"
@@ -37,13 +38,30 @@ _TARGET_FITNESS = 3.95
 _MAX_GENERATION_NUMBER = 500
 
 
-def _input_node_ids_used_by(genome: pn.NEATGenome, number_of_inputs: int) -> list[int]:
-    """Input node ids that feed the network through at least one enabled connection."""
-    input_node_ids = set(range(number_of_inputs))
-    enabled_source_node_ids = {
-        connection.source_node_id for connection in genome.connection_genes if connection.is_enabled
-    }
-    return sorted(input_node_ids & enabled_source_node_ids)
+def _input_node_ids_used_by(
+    genome: pn.NEATGenome, number_of_inputs: int, number_of_outputs: int
+) -> list[int]:
+    """Input node ids with an enabled path to any output node.
+
+    Reachability, not merely an outgoing connection: an input wired into a
+    hidden node that leads nowhere is not a feature the network uses. The same
+    library function backs ``examples/xor/fdneat.py``, so the two feature
+    selection strategies are measured identically and can be compared.
+
+    Node ids follow the generation-0 layout: inputs ``0 .. n-1``, bias ``n``,
+    outputs ``n+1 .. n+number_of_outputs``.
+    """
+    return find_node_ids_with_enabled_path_to_any_target(
+        candidate_source_node_ids=range(number_of_inputs),
+        target_node_ids=range(
+            number_of_inputs + 1, number_of_inputs + 1 + number_of_outputs
+        ),
+        enabled_directed_edges=[
+            (connection.source_node_id, connection.target_node_id)
+            for connection in genome.connection_genes
+            if connection.is_enabled
+        ],
+    )
 
 
 def run_experiment(
@@ -68,7 +86,12 @@ def run_experiment(
     if artifacts_directory is not None:
         callbacks.append(pn.BestGenomePersister(output_directory=artifacts_directory))
         callbacks.append(pn.NetworkTopologyVisualizer(output_directory=artifacts_directory))
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label="xor-fsneat",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
@@ -86,7 +109,9 @@ def run_experiment(
 
     best_genome = result.best_genome_ever_found
     assert isinstance(best_genome, pn.NEATGenome)
-    used_inputs = _input_node_ids_used_by(best_genome, config.number_of_input_nodes)
+    used_inputs = _input_node_ids_used_by(
+        best_genome, config.number_of_input_nodes, config.number_of_output_nodes
+    )
     solved = result.best_fitness_ever_achieved >= _TARGET_FITNESS
     print(f"\nTermination : {result.termination_reason}")
     print(f"XOR solved  : {'YES' if solved else 'NO'}")
@@ -95,16 +120,17 @@ def run_experiment(
         f"(relevant inputs are 0 and 1; 2..{config.number_of_input_nodes - 1} are noise)"
     )
     return ExperimentReport(
-        metric_values={"best_fitness": result.best_fitness_ever_achieved},
+        metric_values={
+            "best_fitness": result.best_fitness_ever_achieved,
+            "number_of_connected_input_features": float(len(used_inputs)),
+        },
         number_of_generations=len(result.full_generation_history),
         runtime_seconds=result.total_runtime_seconds,
     )
 
 
 def main() -> None:
-    device = parse_device_from_cli()
-    report = run_experiment(device=device, artifacts_directory=_ARTIFACTS_DIR)
-    print_experiment_report(report)
+    run_example_main(run_experiment, _ARTIFACTS_DIR)
 
 
 if __name__ == "__main__":

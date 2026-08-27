@@ -30,8 +30,8 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._example_cli import parse_device_from_cli
-from examples._experiment import ExperimentReport, print_experiment_report
+from examples._experiment import ExperimentReport
+from examples._run import run_example_main
 from examples.mnist.dataset import load_mnist
 from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.neat.neat_phenotype_decoder import NEATPhenotypeDecoder
@@ -182,9 +182,7 @@ def run_experiment(
 
 def main() -> None:
     """Evolve a HyperNEAT MNIST classifier and print training and test accuracy."""
-    device = parse_device_from_cli()
-    report = run_experiment(device=device, artifacts_directory=_ARTIFACTS_DIR)
-    print_experiment_report(report)
+    run_example_main(run_experiment, _ARTIFACTS_DIR)
 
 
 if __name__ == "__main__":

@@ -324,3 +324,96 @@ def build_grid_sandwich_substrate(
         output_layer=output_layer,
         bias_node=bias_node,
     )
+
+
+def build_substrate_from_explicit_layer_coordinates(
+    layer_x_coordinates: tuple[tuple[float, ...], ...],
+    coordinate_range_min: float,
+    coordinate_range_max: float,
+    bias_x_coordinate: float | None,
+) -> Substrate:
+    """Build a layered substrate whose x coordinates are given per layer.
+
+    :func:`build_layered_substrate` spreads a layer's nodes *evenly*, which is
+    the right default but cannot express a gap. Tasks whose structure is modular
+    - the retina problem's two separated retinas being the motivating case -
+    need the groups pushed apart, because a locality-based expression rule can
+    only separate two groups when every across-group distance exceeds every
+    within-group distance. With an even spread those ranges overlap and no
+    threshold works: on a row of eight nodes over ``[-1, 1]`` the
+    within-hemisphere distances reach 0.857 while the cross-hemisphere ones
+    start at 0.286.
+
+    Layers are stacked on evenly spaced y coordinates exactly as in
+    :func:`build_layered_substrate`, and node ids are contiguous from 0 in
+    registration order (all inputs, then each hidden layer, then outputs, then
+    the bias), so the substrate ANN's input order matches the task's column
+    order.
+
+    Args:
+        layer_x_coordinates: One tuple of x coordinates per layer, from input to
+            output. Needs at least two layers, none of them empty.
+        coordinate_range_min: Lower bound of the y range the layers span.
+        coordinate_range_max: Upper bound of the y range the layers span.
+        bias_x_coordinate: x coordinate of the bias node, or ``None`` for no
+            bias. Placing it at 0.0 keeps it out of both hemispheres for
+            sign-based modularity metrics.
+
+    Returns:
+        The assembled `Substrate`. The bias, when present, sits a quarter of the
+        coordinate span below the input layer so it never coincides with one.
+
+    Raises:
+        ValueError: If fewer than two layers are given, or any layer is empty.
+    """
+    if len(layer_x_coordinates) < 2:
+        raise ValueError(
+            f"a substrate needs at least an input and an output layer, got "
+            f"{len(layer_x_coordinates)}"
+        )
+    if any(len(layer) == 0 for layer in layer_x_coordinates):
+        raise ValueError("every substrate layer must have at least one node")
+
+    layer_y_coordinates = _evenly_spaced_coordinates(
+        len(layer_x_coordinates), coordinate_range_min, coordinate_range_max
+    )
+
+    next_node_id = 0
+    built_layers: list[SubstrateLayer] = []
+    for layer_index, x_coordinates_in_layer in enumerate(layer_x_coordinates):
+        if layer_index == 0:
+            role: SubstrateNodeRole = "input"
+        elif layer_index == len(layer_x_coordinates) - 1:
+            role = "output"
+        else:
+            role = "hidden"
+
+        nodes_in_layer: list[SubstrateNode] = []
+        for x_coordinate in x_coordinates_in_layer:
+            nodes_in_layer.append(
+                SubstrateNode(
+                    node_id=next_node_id,
+                    x_coordinate=x_coordinate,
+                    y_coordinate=layer_y_coordinates[layer_index],
+                    role=role,
+                )
+            )
+            next_node_id += 1
+        built_layers.append(SubstrateLayer(nodes=tuple(nodes_in_layer)))
+
+    bias_node: SubstrateNode | None = None
+    if bias_x_coordinate is not None:
+        coordinate_span = coordinate_range_max - coordinate_range_min
+        bias_node = SubstrateNode(
+            node_id=next_node_id,
+            x_coordinate=bias_x_coordinate,
+            y_coordinate=coordinate_range_min - 0.25 * coordinate_span,
+            role="bias",
+        )
+
+    return Substrate(
+        input_layer=built_layers[0],
+        hidden_layers=tuple(built_layers[1:-1]),
+        output_layer=built_layers[-1],
+        bias_node=bias_node,
+    )

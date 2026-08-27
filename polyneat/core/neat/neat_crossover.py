@@ -11,7 +11,10 @@ from __future__ import annotations
 from numpy.random import Generator
 
 from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
+from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
+
+logger = get_logger(__name__)
 
 
 def _resolve_enabled_connection_cycles(
@@ -180,6 +183,18 @@ class NEATCrossover:
         validated_child_connection_genes = _resolve_enabled_connection_cycles(
             child_connection_genes
         )
+        number_of_connections_disabled_to_break_cycles = sum(
+            1
+            for original_gene, validated_gene in zip(
+                child_connection_genes, validated_child_connection_genes, strict=True
+            )
+            if original_gene.is_enabled and not validated_gene.is_enabled
+        )
+        if number_of_connections_disabled_to_break_cycles:
+            logger.debug(
+                "Crossover disabled %d inherited connection(s) to keep the child acyclic",
+                number_of_connections_disabled_to_break_cycles,
+            )
 
         return NEATGenome(
             node_genes=tuple(child_node_genes),

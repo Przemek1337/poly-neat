@@ -8,6 +8,9 @@ from numpy.random import Generator
 
 from polyneat.algorithms.exact.exact_genome import ConvolutionEdgeGene, EXACTGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class AddConvolutionEdgeMutation:
             and (source_node.node_id, target_node.node_id) not in existing_endpoint_pairs
         ]
         if not candidate_endpoint_pairs:
+            logger.debug("AddConvolutionEdgeMutation skipped: no free depth-ordered node pair")
             return genome
         source_node_id, target_node_id = candidate_endpoint_pairs[
             int(rng.integers(len(candidate_endpoint_pairs)))

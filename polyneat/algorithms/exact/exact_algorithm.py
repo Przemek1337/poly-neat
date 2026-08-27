@@ -75,6 +75,9 @@ from polyneat.core.neat.neat_algorithm import NEATAlgorithm
 from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.core.population import Population
 from polyneat.core.type_aliases import FitnessValue
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -125,6 +128,7 @@ class EXACTAlgorithm(NEATAlgorithm):
             algorithm.simplex_optimizer = SimplexHyperparameterOptimizer.from_config(
                 exact_config
             )
+            logger.debug("EXACT: simplex hyperparameter optimization enabled")
         return algorithm
 
     @classmethod

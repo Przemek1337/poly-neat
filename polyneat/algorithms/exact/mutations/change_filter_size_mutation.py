@@ -8,6 +8,9 @@ from numpy.random import Generator
 
 from polyneat.algorithms.exact.exact_genome import EXACTGenome
 from polyneat.core.component_protocols import InnovationTracker
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,7 @@ class ChangeFilterSizeMutation:
             if node_gene.node_type == "hidden"
         ]
         if not hidden_node_indices:
+            logger.debug("ChangeFilterSizeMutation skipped: genome has no hidden nodes")
             return genome
         selected_node_index = hidden_node_indices[int(rng.integers(len(hidden_node_indices)))]
         selected_node = genome.node_genes[selected_node_index]
@@ -77,6 +81,7 @@ class ChangeFilterSizeMutation:
             selected_node.filter_height,
             selected_node.filter_width,
         ):
+            logger.debug("ChangeFilterSizeMutation skipped: size delta clamped to no change")
             return genome
 
         resized_node = replace(

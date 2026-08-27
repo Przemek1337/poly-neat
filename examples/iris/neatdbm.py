@@ -33,8 +33,8 @@ from pathlib import Path
 import torch
 
 import polyneat as pn
-from examples._example_cli import parse_device_from_cli
-from examples._experiment import ExperimentReport, print_experiment_report
+from examples._experiment import ExperimentReport
+from examples._run import run_example_main
 from examples.iris.dataset import load_iris
 from polyneat.evaluators.classification_accuracy_evaluator import (
     ClassificationAccuracyEvaluator,
@@ -85,7 +85,12 @@ def run_experiment(
     callbacks: list = [pn.ConsoleStatisticsLogger()]
     if artifacts_directory is not None:
         callbacks.append(pn.BestGenomePersister(output_directory=artifacts_directory))
-        callbacks.append(pn.TensorBoardLogger(log_directory=artifacts_directory / "tensorboard"))
+        callbacks.append(
+            pn.TensorBoardLogger(
+                log_directory=artifacts_directory / "tensorboard",
+                run_label="iris-neatdbm",
+            )
+        )
 
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
@@ -118,9 +123,7 @@ def run_experiment(
 
 
 def main() -> None:
-    device = parse_device_from_cli()
-    report = run_experiment(device=device, artifacts_directory=_ARTIFACTS_DIR)
-    print_experiment_report(report)
+    run_example_main(run_experiment, _ARTIFACTS_DIR)
 
 
 if __name__ == "__main__":

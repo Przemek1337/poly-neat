@@ -4,6 +4,9 @@ import torch
 
 from polyneat.core.neat.neat_genome import NEATGenome
 from polyneat.core.neat.torch_feedforward_phenotype import TorchFeedForwardPhenotype
+from polyneat.logging_utils.custom_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class NEATPhenotypeDecoder:
@@ -31,6 +34,11 @@ class NEATPhenotypeDecoder:
         Returns:
             A phenotype ready for ``forward_pass`` on the configured device.
         """
+        logger.debug(
+            "Decoding NEAT genome: %d nodes, %d connection genes",
+            len(genome.node_genes),
+            len(genome.connection_genes),
+        )
         return TorchFeedForwardPhenotype(
             neat_genome=genome,
             device_for_computation=self._device_for_computation,
