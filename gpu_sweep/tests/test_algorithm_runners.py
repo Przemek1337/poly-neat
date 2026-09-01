@@ -8,10 +8,10 @@ import torch
 
 from gpu_sweep.algorithm_runners import (
     CellOutcome,
+    build_cell_outcome,
     move_dataset_to_device,
     phenotype_output_device_name,
     run_algorithm_on_dataset,
-    summarize_generation_history,
 )
 from gpu_sweep.dataset_catalog import TabularDataset
 from polyneat.core.generation_statistics import GenerationStatistics
@@ -55,28 +55,39 @@ def _statistics(generation_number: int, best_fitness: float) -> GenerationStatis
     )
 
 
-def test_summarize_generation_history_reports_first_and_last_best_fitness() -> None:
+def test_build_cell_outcome_reports_first_last_and_the_whole_curve() -> None:
     history = [_statistics(0, 0.30), _statistics(1, 0.42), _statistics(2, 0.55)]
 
-    outcome = summarize_generation_history(
+    outcome = build_cell_outcome(
         history,
         runtime_seconds=1.5,
-        metric_values={"test_accuracy": 0.8},
+        metric_values={"accuracy": 0.8, "macro_f1": 0.7},
+        per_class_f1_scores=[0.6, 0.8],
         phenotype_output_device="cpu",
+        named_genomes={},
+        structure_notes={},
     )
 
     assert outcome.generations_completed == 3
     assert outcome.first_generation_best_fitness == pytest.approx(0.30)
     assert outcome.last_generation_best_fitness == pytest.approx(0.55)
-    assert outcome.metric_values["test_accuracy"] == pytest.approx(0.8)
+    assert outcome.generation_best_fitnesses == pytest.approx([0.30, 0.42, 0.55])
+    assert outcome.metric_values["macro_f1"] == pytest.approx(0.7)
 
 
-def test_summarize_generation_history_tolerates_an_empty_history() -> None:
-    outcome = summarize_generation_history(
-        [], runtime_seconds=0.0, metric_values={}, phenotype_output_device="cpu"
+def test_build_cell_outcome_tolerates_an_empty_history() -> None:
+    outcome = build_cell_outcome(
+        [],
+        runtime_seconds=0.0,
+        metric_values={},
+        per_class_f1_scores=[],
+        phenotype_output_device="cpu",
+        named_genomes={},
+        structure_notes={},
     )
 
     assert outcome.generations_completed == 0
+    assert outcome.generation_best_fitnesses == []
     assert np.isnan(outcome.first_generation_best_fitness)
 
 
@@ -114,14 +125,16 @@ def test_run_algorithm_on_dataset_rejects_an_unknown_algorithm() -> None:
 def assert_outcome_is_well_formed(outcome: CellOutcome, expected_metrics: tuple[str, ...]) -> None:
     """Shared assertions every per-algorithm test in this file reuses."""
     assert outcome.generations_completed >= 1
+    assert len(outcome.generation_best_fitnesses) == outcome.generations_completed
     assert outcome.runtime_seconds >= 0.0
     assert outcome.phenotype_output_device.startswith("cpu")
+    assert outcome.named_genomes, "every runner must expose at least one genome to draw"
     for metric_name in expected_metrics:
         assert 0.0 <= outcome.metric_values[metric_name] <= 1.0
 
 
 @pytest.mark.parametrize("algorithm_name", ["neat", "fsneat", "neatdbm"])
-def test_softmax_family_runners_produce_a_well_formed_outcome(algorithm_name: str) -> None:
+def test_single_network_family_runners_produce_a_well_formed_outcome(algorithm_name: str) -> None:
     outcome = run_algorithm_on_dataset(
         algorithm_name,
         build_tiny_dataset(number_of_classes=3),
@@ -131,7 +144,9 @@ def test_softmax_family_runners_produce_a_well_formed_outcome(algorithm_name: st
         random_seed=0,
     )
 
-    assert_outcome_is_well_formed(outcome, ("train_accuracy", "test_accuracy"))
+    assert_outcome_is_well_formed(
+        outcome, ("train_accuracy", "test_accuracy", "train_macro_f1", "test_macro_f1")
+    )
     assert not np.isnan(outcome.first_generation_best_fitness)
 
 
@@ -148,7 +163,9 @@ def test_recognizer_family_runners_produce_a_well_formed_outcome(
         random_seed=0,
     )
 
-    assert_outcome_is_well_formed(outcome, ("train_accuracy", "test_accuracy"))
+    assert_outcome_is_well_formed(
+        outcome, ("train_accuracy", "test_accuracy", "train_macro_f1", "test_macro_f1")
+    )
 
 
 def test_lneat_learning_subset_never_asks_for_more_samples_than_a_class_has() -> None:
@@ -167,21 +184,6 @@ def test_lneat_learning_subset_never_asks_for_more_samples_than_a_class_has() ->
     assert sorted(positions.tolist()) == [0, 1, 2, 3, 4]
 
 
-def test_exact_runner_produces_a_well_formed_outcome() -> None:
-    outcome = run_algorithm_on_dataset(
-        "exact",
-        build_tiny_dataset(number_of_classes=2, number_of_features=8),
-        device=torch.device("cpu"),
-        population_size=4,
-        number_of_generations=1,
-        random_seed=0,
-    )
-
-    assert_outcome_is_well_formed(
-        outcome, ("train_accuracy", "generalizability_accuracy", "test_accuracy")
-    )
-
-
 def test_hyperneat_runner_produces_a_well_formed_outcome() -> None:
     outcome = run_algorithm_on_dataset(
         "hyperneat",
@@ -192,4 +194,6 @@ def test_hyperneat_runner_produces_a_well_formed_outcome() -> None:
         random_seed=0,
     )
 
-    assert_outcome_is_well_formed(outcome, ("train_accuracy", "test_accuracy"))
+    assert_outcome_is_well_formed(
+        outcome, ("train_accuracy", "test_accuracy", "train_macro_f1", "test_macro_f1")
+    )

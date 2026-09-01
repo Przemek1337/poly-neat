@@ -3,10 +3,16 @@
 Run from the repository root on the target machine:
 
     uv run python -m gpu_sweep --list-cells
-    uv run python -m gpu_sweep --generations 5 --population 50
+    uv run python -m gpu_sweep --runs 5 --generations 30 --population 50
+    uv run python -m gpu_sweep --resume gpu_sweep_results/<timestamp>
+    uv run python -m gpu_sweep --analyze gpu_sweep_results/<timestamp>
+    uv run python -m gpu_sweep --render-topology gpu_sweep_results/<timestamp>
 
-Every (dataset, algorithm) cell runs in its own child process with a wall-clock
-timeout, so one hang or CUDA out-of-memory does not end the sweep.
+Every run of every (dataset, algorithm) cell happens in its own child process
+with a wall-clock timeout, so one hang or CUDA out-of-memory costs one run
+rather than the sweep. Aggregation, statistics and figures are recomputed from
+the stored records by --analyze; the network pictures are drawn separately by
+--render-topology, which is a manual step on purpose.
 """
 
 from __future__ import annotations
@@ -22,6 +28,9 @@ from pathlib import Path
 
 import torch
 
+from gpu_sweep.aggregation import load_run_records, write_json_atomically
+from gpu_sweep.analyze import analyze_results_directory
+
 ALGORITHM_NAMES: tuple[str, ...] = (
     "neat",
     "fsneat",
@@ -29,11 +38,11 @@ ALGORITHM_NAMES: tuple[str, ...] = (
     "cneat",
     "lneat",
     "hyperneat",
-    "exact",
 )
 
 DEFAULT_NUMBER_OF_GENERATIONS = 5
 DEFAULT_POPULATION_SIZE = 50
+DEFAULT_NUMBER_OF_RUNS = 5
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_TRAIN_FRACTION = 0.66
 DEFAULT_RANDOM_SEED = 42
@@ -72,6 +81,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=f"population size per cell (default: {DEFAULT_POPULATION_SIZE})",
     )
     parser.add_argument(
+        "--runs",
+        type=int,
+        default=DEFAULT_NUMBER_OF_RUNS,
+        help=f"repetitions of every cell (default: {DEFAULT_NUMBER_OF_RUNS})",
+    )
+    parser.add_argument(
         "--timeout-seconds",
         type=int,
         default=DEFAULT_TIMEOUT_SECONDS,
@@ -99,12 +114,47 @@ def build_argument_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("DATASET", "ALGORITHM"),
         default=None,
-        help="internal: run exactly one cell in this process",
+        help="internal: run exactly one run of one cell in this process",
+    )
+    parser.add_argument(
+        "--run-index",
+        type=int,
+        default=0,
+        help="internal: which repetition --single is performing",
     )
     parser.add_argument(
         "--result-path",
         default=None,
         help="internal: where --single writes its JSON record",
+    )
+    parser.add_argument(
+        "--topology-dir",
+        default=None,
+        help="internal: where --single writes topology artifacts (first run only)",
+    )
+    parser.add_argument(
+        "--analyze",
+        default=None,
+        metavar="RESULTS_DIR",
+        help="recompute aggregates, figures and statistics from a finished results directory",
+    )
+    parser.add_argument(
+        "--resume",
+        default=None,
+        metavar="RESULTS_DIR",
+        help=(
+            "continue a previous sweep: write into that directory and skip "
+            "every run whose JSON record is already there"
+        ),
+    )
+    parser.add_argument(
+        "--render-topology",
+        default=None,
+        metavar="RESULTS_DIR",
+        help=(
+            "draw the network pictures from the topology records a finished "
+            "sweep stored; safe to re-run as often as you like"
+        ),
     )
     return parser
 
@@ -141,9 +191,32 @@ def select_cells(
     ]
 
 
-CELL_RESULT_FIELD_NAMES: tuple[str, ...] = (
+def select_runs(
+    cells: list[tuple[str, str]], number_of_runs: int
+) -> list[tuple[str, str, int]]:
+    """Expand every cell into ``number_of_runs`` numbered repetitions.
+
+    Runs of one cell stay adjacent, so a sweep stopped early has complete cells
+    rather than one run of everything.
+
+    Args:
+        cells: ``(dataset_key, algorithm_name)`` pairs.
+        number_of_runs: Repetitions per cell.
+
+    Returns:
+        ``(dataset_key, algorithm_name, run_index)`` triples.
+    """
+    return [
+        (dataset_key, algorithm_name, run_index)
+        for dataset_key, algorithm_name in cells
+        for run_index in range(number_of_runs)
+    ]
+
+
+RUN_CSV_FIELD_NAMES: tuple[str, ...] = (
     "dataset",
     "algorithm",
+    "run_index",
     "status",
     "device",
     "number_of_samples",
@@ -154,46 +227,68 @@ CELL_RESULT_FIELD_NAMES: tuple[str, ...] = (
     "last_generation_best_fitness",
     "fitness_delta",
     "improved",
+    "plateau_generation",
     "train_accuracy",
-    "generalizability_accuracy",
     "test_accuracy",
+    "train_macro_f1",
+    "test_macro_f1",
     "runtime_seconds",
     "peak_gpu_memory_megabytes",
     "phenotype_output_device",
+    "evolution_seed",
+    "split_seed",
     "error",
 )
 
+RUN_RECORD_FIELD_NAMES: tuple[str, ...] = (
+    *RUN_CSV_FIELD_NAMES,
+    "generation_best_fitnesses",
+    "per_class_f1_scores",
+)
+"""Everything stored per run.
 
-def build_cell_record(
+Only the two per-generation vectors stay out of ``runs.csv``, because a CSV
+cell cannot hold a list; they live in the JSON records. The seeds *are* in the
+CSV - they are plain integers, and they are the first thing anyone needs in
+order to reproduce a single row."""
+
+
+def build_run_record(
     dataset_key: str,
     algorithm_name: str,
+    run_index: int,
     *,
     status: str,
     **field_values: object,
 ) -> dict[str, object]:
-    """Build one fully populated result row.
+    """Build one fully populated run record.
 
-    Every column in :data:`CELL_RESULT_FIELD_NAMES` is present in the returned
-    record - missing values are ``None`` - so the CSV writer never has to guess
-    and a failed cell lines up with a successful one.
+    Every key in :data:`RUN_RECORD_FIELD_NAMES` is present - missing values are
+    ``None`` - so a failed run lines up with a successful one and the CSV
+    writer never has to guess.
 
     Args:
         dataset_key: Catalog key of the dataset.
-        algorithm_name: Algorithm the cell ran.
+        algorithm_name: Algorithm the run used.
+        run_index: Which repetition of the cell this is, counting from zero.
         status: ``"ok"``, ``"error"``, or ``"timeout"``.
-        **field_values: Any other column values to fill in.
+        **field_values: Any other record fields to fill in.
 
     Returns:
         The record, with ``fitness_delta`` and ``improved`` derived from the
         first/last generation fitness pair when both are present.
+
+    Raises:
+        KeyError: If a field name is not in :data:`RUN_RECORD_FIELD_NAMES`.
     """
-    record: dict[str, object] = dict.fromkeys(CELL_RESULT_FIELD_NAMES)
+    record: dict[str, object] = dict.fromkeys(RUN_RECORD_FIELD_NAMES)
     record["dataset"] = dataset_key
     record["algorithm"] = algorithm_name
+    record["run_index"] = run_index
     record["status"] = status
     for field_name, value in field_values.items():
         if field_name not in record:
-            raise KeyError(f"{field_name!r} is not a cell result column")
+            raise KeyError(f"{field_name!r} is not a run record field")
         record[field_name] = value
 
     first_fitness = record["first_generation_best_fitness"]
@@ -204,13 +299,15 @@ def build_cell_record(
     return record
 
 
-def write_results_csv(cell_records: list[dict[str, object]], csv_path: Path) -> None:
-    """Write every cell record to ``csv_path`` in :data:`CELL_RESULT_FIELD_NAMES` order."""
+def write_runs_csv(run_records: list[dict[str, object]], csv_path: Path) -> None:
+    """Write every run record to ``csv_path`` in :data:`RUN_CSV_FIELD_NAMES` order."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with csv_path.open("w", encoding="utf-8", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(CELL_RESULT_FIELD_NAMES))
+        writer = csv.DictWriter(
+            csv_file, fieldnames=list(RUN_CSV_FIELD_NAMES), extrasaction="ignore"
+        )
         writer.writeheader()
-        writer.writerows(cell_records)
+        writer.writerows(run_records)
 
 
 def resolve_cuda_device() -> torch.device:
@@ -229,25 +326,39 @@ def resolve_cuda_device() -> torch.device:
     return torch.device("cuda")
 
 
-def run_single_cell(
-    dataset_key: str, algorithm_name: str, arguments: argparse.Namespace
+def run_single_run(
+    dataset_key: str,
+    algorithm_name: str,
+    run_index: int,
+    arguments: argparse.Namespace,
 ) -> dict[str, object]:
-    """Run one cell in this process and return its record. The child-process body."""
+    """Perform one run of one cell in this process. The child-process body.
+
+    The split seed is ``--seed`` for every run, so all repetitions of a cell
+    see identical data; the evolution seed is ``--seed + run_index``, so the
+    spread between runs measures the search rather than the sampling.
+    """
     from gpu_sweep.algorithm_runners import run_algorithm_on_dataset
+    from gpu_sweep.convergence import find_plateau_generation
     from gpu_sweep.dataset_catalog import DATASET_SPECS, load_tabular_dataset
+    from gpu_sweep.topology_report import write_topology_record
 
     device = resolve_cuda_device()
     torch.cuda.reset_peak_memory_stats(device)
+    split_seed = arguments.seed
+    evolution_seed = arguments.seed + run_index
     dataset = load_tabular_dataset(
         DATASET_SPECS[dataset_key],
         train_fraction=arguments.train_fraction,
-        random_seed=arguments.seed,
+        random_seed=split_seed,
     )
     shape_fields = {
         "number_of_samples": dataset.number_of_samples,
         "number_of_features": dataset.number_of_features,
         "number_of_classes": dataset.number_of_classes,
         "device": str(device),
+        "evolution_seed": evolution_seed,
+        "split_seed": split_seed,
     }
     try:
         outcome = run_algorithm_on_dataset(
@@ -256,31 +367,54 @@ def run_single_cell(
             device=device,
             population_size=arguments.population,
             number_of_generations=arguments.generations,
-            random_seed=arguments.seed,
+            random_seed=evolution_seed,
         )
-    except Exception as run_error:  # noqa: BLE001 - a failed cell is a result
+    except Exception as run_error:  # noqa: BLE001 - a failed run is a result
         traceback.print_exc()
-        return build_cell_record(
+        return build_run_record(
             dataset_key,
             algorithm_name,
+            run_index,
             status="error",
             error=f"{type(run_error).__name__}: {run_error}",
             **shape_fields,
         )
 
-    return build_cell_record(
+    if arguments.topology_dir is not None:
+        # Store only. Drawing happens later, via --render-topology, so a run on
+        # a wide dataset never spends its timeout inside matplotlib.
+        for genome_label, genome in outcome.named_genomes.items():
+            write_topology_record(
+                genome,
+                Path(arguments.topology_dir),
+                f"{dataset_key}__{algorithm_name}__{genome_label}",
+                title=f"{dataset_key} / {algorithm_name} / {genome_label}",
+                structure_notes={
+                    **outcome.structure_notes,
+                    "dataset_features": dataset.number_of_features,
+                    "dataset_classes": dataset.number_of_classes,
+                    "evolution_seed": evolution_seed,
+                },
+            )
+
+    return build_run_record(
         dataset_key,
         algorithm_name,
+        run_index,
         status="ok",
         generations_completed=outcome.generations_completed,
+        generation_best_fitnesses=outcome.generation_best_fitnesses,
+        per_class_f1_scores=outcome.per_class_f1_scores,
         first_generation_best_fitness=outcome.first_generation_best_fitness,
         last_generation_best_fitness=outcome.last_generation_best_fitness,
+        plateau_generation=find_plateau_generation(outcome.generation_best_fitnesses),
         runtime_seconds=outcome.runtime_seconds,
         phenotype_output_device=outcome.phenotype_output_device,
         peak_gpu_memory_megabytes=torch.cuda.max_memory_allocated(device) / (1024 * 1024),
         train_accuracy=outcome.metric_values.get("train_accuracy"),
-        generalizability_accuracy=outcome.metric_values.get("generalizability_accuracy"),
         test_accuracy=outcome.metric_values.get("test_accuracy"),
+        train_macro_f1=outcome.metric_values.get("train_macro_f1"),
+        test_macro_f1=outcome.metric_values.get("test_macro_f1"),
         **shape_fields,
     )
 
@@ -288,17 +422,21 @@ def run_single_cell(
 def _child_process_command(
     dataset_key: str,
     algorithm_name: str,
+    run_index: int,
     arguments: argparse.Namespace,
     result_path: Path,
+    topology_directory: Path | None,
 ) -> list[str]:
-    """Build the argv that re-invokes this module for exactly one cell."""
-    return [
+    """Build the argv that re-invokes this module for exactly one run."""
+    command = [
         sys.executable,
         "-m",
         "gpu_sweep",
         "--single",
         dataset_key,
         algorithm_name,
+        "--run-index",
+        str(run_index),
         "--result-path",
         str(result_path),
         "--generations",
@@ -310,10 +448,13 @@ def _child_process_command(
         "--seed",
         str(arguments.seed),
     ]
+    if topology_directory is not None:
+        command.extend(["--topology-dir", str(topology_directory)])
+    return command
 
 
 def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Path:
-    """Run every cell in a child process and write the results.
+    """Run every repetition of every cell in a child process, then analyse.
 
     Args:
         arguments: Parsed CLI arguments.
@@ -323,11 +464,17 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
         The directory the results were written to.
     """
     resolve_cuda_device()
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_directory = Path("gpu_sweep_results") / timestamp
-    cells_directory = output_directory / "cells"
-    cells_directory.mkdir(parents=True, exist_ok=True)
+    if arguments.resume is not None:
+        output_directory = Path(arguments.resume)
+        timestamp = output_directory.name
+    else:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_directory = Path("gpu_sweep_results") / timestamp
+    runs_directory = output_directory / "runs"
+    topology_directory = output_directory / "topology"
+    runs_directory.mkdir(parents=True, exist_ok=True)
 
+    runs = select_runs(cells, arguments.runs)
     (output_directory / "sweep_meta.json").write_text(
         json.dumps(
             {
@@ -337,63 +484,103 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
                 "cuda_device_name": torch.cuda.get_device_name(0),
                 "generations": arguments.generations,
                 "population": arguments.population,
+                "runs_per_cell": arguments.runs,
                 "timeout_seconds": arguments.timeout_seconds,
                 "train_fraction": arguments.train_fraction,
                 "seed": arguments.seed,
                 "number_of_cells": len(cells),
+                "number_of_runs": len(runs),
+                "seeding_rule": (
+                    "split seed is --seed for every run; evolution seed is --seed + run_index"
+                ),
             },
             indent=2,
         ),
         encoding="utf-8",
     )
 
-    cell_records: list[dict[str, object]] = []
-    for cell_index, (dataset_key, algorithm_name) in enumerate(cells, start=1):
-        result_path = cells_directory / f"{dataset_key}__{algorithm_name}.json"
+    # Records are gathered from disk after the loop rather than accumulated
+    # here, so a resumed sweep reports the runs it skipped alongside the ones
+    # it just ran.
+    for position, (dataset_key, algorithm_name, run_index) in enumerate(runs, start=1):
+        result_path = runs_directory / f"{dataset_key}__{algorithm_name}__run{run_index}.json"
+        if arguments.resume is not None and result_path.exists():
+            print(
+                f"[{position}/{len(runs)}] {dataset_key}/{algorithm_name} "
+                f"run {run_index}: already recorded, skipping"
+            )
+            continue
         print(
-            f"\n=== [{cell_index}/{len(cells)}] {dataset_key}/{algorithm_name} "
-            f"(timeout {arguments.timeout_seconds}s) ==="
+            f"\n=== [{position}/{len(runs)}] {dataset_key}/{algorithm_name} "
+            f"run {run_index} (timeout {arguments.timeout_seconds}s) ==="
         )
-        command = _child_process_command(dataset_key, algorithm_name, arguments, result_path)
+        command = _child_process_command(
+            dataset_key,
+            algorithm_name,
+            run_index,
+            arguments,
+            result_path,
+            topology_directory if run_index == 0 else None,
+        )
         try:
             completed = subprocess.run(command, timeout=arguments.timeout_seconds, check=False)
             if result_path.exists():
                 record = json.loads(result_path.read_text(encoding="utf-8"))
             else:
-                record = build_cell_record(
+                record = build_run_record(
                     dataset_key,
                     algorithm_name,
+                    run_index,
                     status="error",
                     error=f"child process exited with code {completed.returncode}",
                 )
         except subprocess.TimeoutExpired:
-            record = build_cell_record(
+            record = build_run_record(
                 dataset_key,
                 algorithm_name,
+                run_index,
                 status="timeout",
                 error=f"exceeded {arguments.timeout_seconds}s",
             )
         if not result_path.exists():
-            result_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-        cell_records.append(record)
-        print(f"-> {record['status']} (fitness delta {record['fitness_delta']})")
+            write_json_atomically(record, result_path)
+        print(f"-> {record['status']} (test macro-F1 {record['test_macro_f1']})")
 
-    write_results_csv(cell_records, output_directory / "results.csv")
+    # Rebuild runs.csv from the stored JSON rather than from an in-memory
+    # list, so it is generated from exactly the source aggregates.csv reads.
+    # Writing one from memory and the other from disk lets the two disagree
+    # after a resumed or partially-failed sweep.
+    write_runs_csv(load_run_records(runs_directory), output_directory / "runs.csv")
+    analyze_results_directory(output_directory)
     return output_directory
 
 
 def main(argument_list: list[str] | None = None) -> None:
-    """Parse arguments and list cells, run one cell, or run the whole sweep."""
+    """Parse arguments and analyse, list cells, run one run, or run the sweep."""
     arguments = build_argument_parser().parse_args(argument_list)
+
+    if arguments.render_topology is not None:
+        from gpu_sweep.topology_report import render_topology_records
+
+        topology_directory = Path(arguments.render_topology) / "topology"
+        if not topology_directory.is_dir():
+            raise SystemExit(f"error: no topology directory under {arguments.render_topology}")
+        number_drawn = render_topology_records(topology_directory)
+        print(f"drew {number_drawn} network pictures into {topology_directory}")
+        return
+
+    if arguments.analyze is not None:
+        analyze_results_directory(Path(arguments.analyze))
+        print(f"Analysis written into {arguments.analyze}")
+        return
 
     if arguments.single is not None:
         if arguments.result_path is None:
             raise SystemExit("error: --single requires --result-path")
         dataset_key, algorithm_name = arguments.single
-        record = run_single_cell(dataset_key, algorithm_name, arguments)
+        record = run_single_run(dataset_key, algorithm_name, arguments.run_index, arguments)
         result_path = Path(arguments.result_path)
-        result_path.parent.mkdir(parents=True, exist_ok=True)
-        result_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        write_json_atomically(record, result_path)
         print(json.dumps(record, indent=2))
         return
 
