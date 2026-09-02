@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 
 
 def compute_topological_order_of_node_ids(
@@ -46,22 +46,51 @@ def compute_topological_order_of_node_ids(
     return topologically_sorted_node_ids
 
 
-def would_directed_edge_create_cycle(
+def build_outgoing_adjacency_from_directed_edges(
+    directed_edges: Iterable[tuple[int, int]],
+) -> dict[int, list[int]]:
+    """Group directed edges by their source node.
+
+    Args:
+        directed_edges: ``(source, target)`` pairs. Duplicates are preserved, so
+            a repeated edge appears once per occurrence in its source's list.
+
+    Returns:
+        A ``defaultdict`` from source node id to its target node ids in
+        encounter order. Sources with no outgoing edge are absent from the map,
+        and reading one through ``[]`` inserts it - use ``get`` to leave the map
+        unchanged.
+    """
+    outgoing_targets_by_source_node_id: dict[int, list[int]] = defaultdict(list)
+    for source_node_id, target_node_id in directed_edges:
+        outgoing_targets_by_source_node_id[source_node_id].append(target_node_id)
+    return outgoing_targets_by_source_node_id
+
+
+def would_directed_edge_create_cycle_in_adjacency(
     candidate_source_node_id: int,
     candidate_target_node_id: int,
-    existing_enabled_edges: Iterable[tuple[int, int]],
+    outgoing_targets_by_source_node_id: Mapping[int, Sequence[int]],
 ) -> bool:
-    """Return True if adding the candidate edge would introduce a directed cycle.
+    """Return True if the candidate edge would close a cycle in the given adjacency.
 
-    Runs a BFS from the candidate's target: if the source is reachable, the new
-    edge would close a cycle back to itself.
+    Breadth-first search from the candidate's target: reaching the candidate's
+    source means the graph already carries a path back, so adding the edge would
+    close a loop. A self-loop is reported without searching. The search visits
+    only the part of the graph reachable from the target, and reads the adjacency
+    without writing to it, so one map can answer any number of candidates.
+
+    Args:
+        candidate_source_node_id: Node the prospective edge leaves.
+        candidate_target_node_id: Node the prospective edge enters.
+        outgoing_targets_by_source_node_id: Adjacency of the edges already
+            accepted, as built by :func:`build_outgoing_adjacency_from_directed_edges`.
+
+    Returns:
+        Whether accepting the candidate edge would create a directed cycle.
     """
     if candidate_source_node_id == candidate_target_node_id:
         return True
-
-    outgoing_targets_by_source_node_id: dict[int, list[int]] = defaultdict(list)
-    for source_node_id, target_node_id in existing_enabled_edges:
-        outgoing_targets_by_source_node_id[source_node_id].append(target_node_id)
 
     bfs_frontier: deque[int] = deque([candidate_target_node_id])
     visited_node_ids: set[int] = {candidate_target_node_id}
@@ -70,12 +99,35 @@ def would_directed_edge_create_cycle(
         current_node_id = bfs_frontier.popleft()
         if current_node_id == candidate_source_node_id:
             return True
-        for next_node_id in outgoing_targets_by_source_node_id[current_node_id]:
+        for next_node_id in outgoing_targets_by_source_node_id.get(current_node_id, ()):
             if next_node_id not in visited_node_ids:
                 visited_node_ids.add(next_node_id)
                 bfs_frontier.append(next_node_id)
 
     return False
+
+
+def would_directed_edge_create_cycle(
+    candidate_source_node_id: int,
+    candidate_target_node_id: int,
+    existing_enabled_edges: Iterable[tuple[int, int]],
+) -> bool:
+    """Return True if adding the candidate edge would introduce a directed cycle.
+
+    Edge-list form of :func:`would_directed_edge_create_cycle_in_adjacency`: it
+    groups ``existing_enabled_edges`` by source, asks the same question, and
+    discards the grouping. That build is O(edges) and is paid whether or not the
+    search then takes a single step, so a caller asking about many candidates
+    against one slowly growing edge set should keep the adjacency itself and call
+    the other form.
+    """
+    return would_directed_edge_create_cycle_in_adjacency(
+        candidate_source_node_id=candidate_source_node_id,
+        candidate_target_node_id=candidate_target_node_id,
+        outgoing_targets_by_source_node_id=build_outgoing_adjacency_from_directed_edges(
+            existing_enabled_edges
+        ),
+    )
 
 
 def find_node_ids_with_enabled_path_to_any_target(
