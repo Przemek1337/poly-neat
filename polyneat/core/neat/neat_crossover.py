@@ -8,11 +8,13 @@ preset chance of staying disabled in the child.
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 from numpy.random import Generator
 
 from polyneat.core.neat.neat_genome import ConnectionGene, NEATGenome, NodeGene
 from polyneat.logging_utils.custom_logger import get_logger
-from polyneat.nn.topology_utilities import would_directed_edge_create_cycle
+from polyneat.nn.topology_utilities import would_directed_edge_create_cycle_in_adjacency
 
 logger = get_logger(__name__)
 
@@ -25,21 +27,27 @@ def _resolve_enabled_connection_cycles(
     Processes connections in ascending innovation_id order. Each enabled connection
     is accepted only if it does not form a cycle with the already-accepted enabled
     edges. Disabled-in-input connections are passed through unchanged.
+
+    The reachability adjacency of the accepted edges is built once and appended to
+    as edges are accepted. Asking ``would_directed_edge_create_cycle`` instead
+    rebuilds that adjacency on every gene, which makes the pass quadratic in the
+    gene count - a generation-0 genome on a 7,070-feature dataset carries 14,142
+    genes, and the rebuilds alone cost about 100 million list appends per child.
     """
     sorted_indices = sorted(
         range(len(connection_genes)), key=lambda i: connection_genes[i].innovation_id
     )
-    accepted_enabled_edges: list[tuple[int, int]] = []
+    accepted_outgoing_targets_by_source_node_id: dict[int, list[int]] = defaultdict(list)
     resolved: list[ConnectionGene] = list(connection_genes)
 
     for index in sorted_indices:
         conn = connection_genes[index]
         if not conn.is_enabled:
             continue
-        if would_directed_edge_create_cycle(
+        if would_directed_edge_create_cycle_in_adjacency(
             candidate_source_node_id=conn.source_node_id,
             candidate_target_node_id=conn.target_node_id,
-            existing_enabled_edges=accepted_enabled_edges,
+            outgoing_targets_by_source_node_id=accepted_outgoing_targets_by_source_node_id,
         ):
             resolved[index] = ConnectionGene(
                 innovation_id=conn.innovation_id,
@@ -49,7 +57,9 @@ def _resolve_enabled_connection_cycles(
                 is_enabled=False,
             )
         else:
-            accepted_enabled_edges.append((conn.source_node_id, conn.target_node_id))
+            accepted_outgoing_targets_by_source_node_id[conn.source_node_id].append(
+                conn.target_node_id
+            )
 
     return resolved
 
