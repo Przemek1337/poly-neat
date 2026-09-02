@@ -49,12 +49,17 @@ def compute_topological_order_of_node_ids(
 def build_outgoing_adjacency_from_directed_edges(
     directed_edges: Iterable[tuple[int, int]],
 ) -> dict[int, list[int]]:
-    """Return a ``source -> [targets]`` map of the given edges.
+    """Group directed edges by their source node.
 
-    Callers that ask many reachability questions against a slowly changing edge
-    set should build this once and pass it to
-    :func:`would_directed_edge_create_cycle_in_adjacency`, appending accepted
-    edges as they go, rather than paying for a fresh map per question.
+    Args:
+        directed_edges: ``(source, target)`` pairs. Duplicates are preserved, so
+            a repeated edge appears once per occurrence in its source's list.
+
+    Returns:
+        A ``defaultdict`` from source node id to its target node ids in
+        encounter order. Sources with no outgoing edge are absent from the map,
+        and reading one through ``[]`` inserts it - use ``get`` to leave the map
+        unchanged.
     """
     outgoing_targets_by_source_node_id: dict[int, list[int]] = defaultdict(list)
     for source_node_id, target_node_id in directed_edges:
@@ -69,11 +74,11 @@ def would_directed_edge_create_cycle_in_adjacency(
 ) -> bool:
     """Return True if the candidate edge would close a cycle in the given adjacency.
 
-    Runs a BFS from the candidate's target: if the source is reachable, the new
-    edge would close a cycle back to itself. The adjacency is only read - missing
-    sources are looked up with ``get`` so that passing a ``defaultdict`` does not
-    grow it - which makes the map safe to carry across a whole scan of candidate
-    edges.
+    Breadth-first search from the candidate's target: reaching the candidate's
+    source means the graph already carries a path back, so adding the edge would
+    close a loop. A self-loop is reported without searching. The search visits
+    only the part of the graph reachable from the target, and reads the adjacency
+    without writing to it, so one map can answer any number of candidates.
 
     Args:
         candidate_source_node_id: Node the prospective edge leaves.
@@ -109,11 +114,12 @@ def would_directed_edge_create_cycle(
 ) -> bool:
     """Return True if adding the candidate edge would introduce a directed cycle.
 
-    Convenience form for one-off questions: it builds the adjacency of
-    ``existing_enabled_edges`` and defers to
-    :func:`would_directed_edge_create_cycle_in_adjacency`. Asking this repeatedly
-    against a growing edge set costs O(edges) per call for the rebuild alone -
-    carry the adjacency and call the other form instead.
+    Edge-list form of :func:`would_directed_edge_create_cycle_in_adjacency`: it
+    groups ``existing_enabled_edges`` by source, asks the same question, and
+    discards the grouping. That build is O(edges) and is paid whether or not the
+    search then takes a single step, so a caller asking about many candidates
+    against one slowly growing edge set should keep the adjacency itself and call
+    the other form.
     """
     return would_directed_edge_create_cycle_in_adjacency(
         candidate_source_node_id=candidate_source_node_id,

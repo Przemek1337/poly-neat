@@ -197,9 +197,8 @@ class TestResolveEnabledConnectionCycles:
     def test_resolves_a_wide_generation_zero_gene_set_within_the_time_budget(self) -> None:
         """14,142 input->output genes hold no cycle; proving that must stay cheap.
 
-        Rebuilding the reachability adjacency per gene makes this quadratic —
-        roughly 100 million list appends, about 18 s — which dominated every
-        generation of a sweep run on the microarray datasets.
+        Guards against the scan going quadratic again, which is what happens when
+        the reachability adjacency is rebuilt per gene rather than carried.
         """
         genes = list(_build_wide_fully_connected_genome(0.5).connection_genes)
 

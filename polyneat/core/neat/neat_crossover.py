@@ -27,12 +27,6 @@ def _resolve_enabled_connection_cycles(
     Processes connections in ascending innovation_id order. Each enabled connection
     is accepted only if it does not form a cycle with the already-accepted enabled
     edges. Disabled-in-input connections are passed through unchanged.
-
-    The reachability adjacency of the accepted edges is built once and appended to
-    as edges are accepted. Asking ``would_directed_edge_create_cycle`` instead
-    rebuilds that adjacency on every gene, which makes the pass quadratic in the
-    gene count - a generation-0 genome on a 7,070-feature dataset carries 14,142
-    genes, and the rebuilds alone cost about 100 million list appends per child.
     """
     sorted_indices = sorted(
         range(len(connection_genes)), key=lambda i: connection_genes[i].innovation_id
