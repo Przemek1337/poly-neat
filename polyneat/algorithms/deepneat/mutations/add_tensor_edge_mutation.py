@@ -104,4 +104,5 @@ class AddTensorEdgeMutation:
         return DeepNEATGenome(
             node_genes=genome.node_genes,
             edge_genes=(*genome.edge_genes, new_edge),
+            global_hyperparameters=genome.global_hyperparameters,
         )

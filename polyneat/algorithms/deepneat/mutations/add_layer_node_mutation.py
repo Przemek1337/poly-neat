@@ -32,11 +32,9 @@ class AddLayerNodeMutation:
     keyed on the split edge - two genomes splitting the same edge must come out
     with the same ids or crossover would align unrelated layers.
 
-    Because ``DeepNEATInnovationTracker`` never clears that keying (markings
-    are kept for the whole run, not just one generation), a genome that has
-    once split edge X can never split X again for the rest of the run: doing
-    so would replay the same cached node id it already carries, which this
-    operator detects and avoids by excluding that edge and drawing another.
+    A repeated split of the same edge within one generation reuses the same
+    record, as NEAT historical markings require. If a genome already carries
+    that node, this operator excludes the edge and tries another candidate.
     """
 
     def __init__(
@@ -48,6 +46,11 @@ class AddLayerNodeMutation:
         dropout_rate_min: float,
         dropout_rate_max: float,
         probability_of_new_conv_layer: float,
+        initial_weight_scaling_min: float = 0.0,
+        initial_weight_scaling_max: float = 2.0,
+        available_batch_normalization_options: tuple[bool, ...] = (False,),
+        number_of_filters_min: int | None = None,
+        number_of_filters_max: int | None = None,
     ) -> None:
         """Store the firing probability and the search space.
 
@@ -68,6 +71,13 @@ class AddLayerNodeMutation:
         self._dropout_rate_min = dropout_rate_min
         self._dropout_rate_max = dropout_rate_max
         self._probability_of_new_conv_layer = probability_of_new_conv_layer
+        self._initial_weight_scaling_min = initial_weight_scaling_min
+        self._initial_weight_scaling_max = initial_weight_scaling_max
+        self._available_batch_normalization_options = (
+            available_batch_normalization_options
+        )
+        self._number_of_filters_min = number_of_filters_min
+        self._number_of_filters_max = number_of_filters_max
 
     def apply_to_genome(
         self,
@@ -87,9 +97,7 @@ class AddLayerNodeMutation:
         Returns:
             The mutated genome, or the original when the operator does not
             fire, there is no enabled edge to split, or every enabled edge's
-            split would replay a node id this genome already carries (see the
-            class docstring: a genome that has split edge X can never split X
-            again for the rest of the run).
+            split would replay a node id this genome already carries.
         """
         if rng.random() >= self._probability_of_application:
             return genome
@@ -103,11 +111,8 @@ class AddLayerNodeMutation:
 
         highest_existing_node_id = max(node.node_id for node in genome.node_genes)
 
-        # DeepNEATInnovationTracker never clears its within-generation dedup
-        # tables (it keeps historical markings for the whole run, not just one
-        # generation), so splitting the *same* edge a second time - possible
-        # when ToggleTensorEdgeMutation re-enables a disabled split edge in a
-        # later generation - replays the cached NodeSplitRecord verbatim. If
+        # Splitting the same edge twice within one generation replays the
+        # cached NodeSplitRecord. If
         # this genome still carries the node from the earlier split (the
         # common case: splitting disables the edge but never removes the
         # node), inserting it again would duplicate a node_id. A fresh split
@@ -149,6 +154,13 @@ class AddLayerNodeMutation:
                 available_kernel_sizes=self._available_kernel_sizes,
                 dropout_rate_min=self._dropout_rate_min,
                 dropout_rate_max=self._dropout_rate_max,
+                initial_weight_scaling_min=self._initial_weight_scaling_min,
+                initial_weight_scaling_max=self._initial_weight_scaling_max,
+                available_batch_normalization_options=(
+                    self._available_batch_normalization_options
+                ),
+                number_of_filters_min=self._number_of_filters_min,
+                number_of_filters_max=self._number_of_filters_max,
             )
         else:
             inserted_node = draw_dense_layer_hyperparameters(
@@ -157,6 +169,11 @@ class AddLayerNodeMutation:
                 available_dense_unit_counts=self._available_dense_unit_counts,
                 dropout_rate_min=self._dropout_rate_min,
                 dropout_rate_max=self._dropout_rate_max,
+                initial_weight_scaling_min=self._initial_weight_scaling_min,
+                initial_weight_scaling_max=self._initial_weight_scaling_max,
+                available_batch_normalization_options=(
+                    self._available_batch_normalization_options
+                ),
             )
 
         disabled_original_edge = TensorEdgeGene(
@@ -194,4 +211,5 @@ class AddLayerNodeMutation:
                 edge_into_new_node,
                 edge_out_of_new_node,
             ),
+            global_hyperparameters=genome.global_hyperparameters,
         )

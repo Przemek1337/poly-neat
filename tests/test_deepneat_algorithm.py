@@ -26,6 +26,9 @@ from polyneat.algorithms.deepneat.mutations.add_tensor_edge_mutation import (
 from polyneat.algorithms.deepneat.mutations.deepneat_composite_mutation import (
     DeepNEATCompositeMutation,
 )
+from polyneat.algorithms.deepneat.mutations.global_hyperparameter_mutation import (
+    GlobalHyperparameterMutation,
+)
 from polyneat.algorithms.deepneat.mutations.layer_hyperparameter_mutation import (
     LayerHyperparameterMutation,
 )
@@ -76,14 +79,14 @@ def test_from_config_wires_deepneat_components() -> None:
     assert isinstance(algorithm.innovation_tracker, DeepNEATInnovationTracker)
     assert isinstance(algorithm.phenotype_decoder, DeepNEATPhenotypeDecoder)
 
-    # Pin Task 4's fixed operator order (DeepNEATCompositeMutation's own
-    # docstring claims this exact order) so a future edit that swaps two
-    # operators, or two of the four probabilities feeding them, cannot pass
-    # silently behind an isinstance-only check.
+    # Pin the composite's documented operator order so a future edit that
+    # swaps operators, or the probabilities feeding them, cannot pass silently
+    # behind an isinstance-only check.
     operator_types = [
         type(operator) for operator in algorithm.mutation._ordered_individual_mutations
     ]
     assert operator_types == [
+        GlobalHyperparameterMutation,
         LayerHyperparameterMutation,
         AddTensorEdgeMutation,
         AddLayerNodeMutation,
@@ -111,7 +114,7 @@ def test_from_config_warns_when_initial_population_strategy_is_overridden(
     )
 
 
-def test_initial_population_is_identical_linear_classifiers() -> None:
+def test_initial_population_has_minimal_topology_and_evolved_global_genes() -> None:
     config = _small_config()
     algorithm = DeepNEATAlgorithm.from_config(config)
     rng = np.random.default_rng(0)
@@ -128,8 +131,9 @@ def test_initial_population_is_identical_linear_classifiers() -> None:
         assert genome.edge_genes[0].is_enabled
         layer_types = {node.layer_type for node in genome.node_genes}
         assert layer_types == {"input", "output"}
-    # Diversity comes from mutation, not from the starting population (decision #12).
-    assert all(genome == genomes[0] for genome in genomes)
+    assert all(genome.node_genes == genomes[0].node_genes for genome in genomes)
+    assert all(genome.edge_genes == genomes[0].edge_genes for genome in genomes)
+    assert len({genome.global_hyperparameters for genome in genomes}) > 1
 
 
 def test_yaml_initial_population_strategy_is_ignored() -> None:

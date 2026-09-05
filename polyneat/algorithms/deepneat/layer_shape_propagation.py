@@ -7,26 +7,15 @@ in topological order to compute the tensor shape flowing out of each layer.
 That per-node shape is what lets the next stage build real ``torch.nn`` modules
 with the right channel/feature counts.
 
-Two of the rules implemented here are this library's own reconstruction, not
-rules taken from the source paper. The paper settles that DeepNEAT nodes are
-layers, edges carry no weight, and evolution operates over a graph of them —
-but it describes DeepNEAT at a level that does not settle how multiple inputs
-to one node are combined, or what happens when a convolutional layer receives
-a non-spatial input. Both gaps must be resolved for any concrete genome to be
-buildable at all, so this library fills them itself:
+The merge rule follows Liang (2018, section 3.2.1): parent feature maps are
+downsampled to the smallest spatial size and then merged. The paper permits
+concatenation or element-wise addition; this implementation chooses
+concatenation. For image data the downsampling operation is max pooling.
 
-- **Multi-input merge (Decision #3).** A node with more than one enabled
-  incoming edge: if every incoming tensor is spatial (4-D) and the node is a
-  ``conv`` layer, each is adaptively average-pooled down to the smallest
-  ``(height, width)`` among them and concatenated along the channel
-  dimension. If any incoming tensor is flat, or the node is ``dense`` or
-  ``output``, every incoming tensor is flattened and concatenated along the
-  feature dimension instead.
-- **Conv-on-flat coercion (Decision #4).** A ``conv`` layer that receives a
-  flat input behaves as a ``dense`` layer with ``units = number_of_filters``.
-  This guarantees that no mutation can ever produce a genome that cannot be
-  built into a network, so the mutation operators never have to inspect the
-  graph to avoid that outcome.
+The source does not define a conversion between spatial and flat parent
+tensors. Such a graph is therefore rejected as incompatible instead of silently
+changing a chromosome's layer type. In particular, a ``conv`` gene always
+decodes to a convolutional layer; it is never coerced to ``Linear``.
 
 References:
     Miikkulainen, R., Liang, J., Meyerson, E., Rawal, A., Fink, D., Francon, O., Raju, B.,
@@ -49,6 +38,10 @@ from polyneat.nn.topology_utilities import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class IncompatibleTensorShapesError(ValueError):
+    """Raised when a chromosome cannot be decoded without changing its genes."""
 
 
 @dataclass(frozen=True)
@@ -118,13 +111,12 @@ class TensorShape:
 class MergeStrategy:
     """How to combine several incoming tensors into the single input a layer needs.
 
-    See the module docstring for Decision #3, the merge rule this describes.
+    See the module docstring for the source-derived merge rule this describes.
 
     Attributes:
-        flatten_inputs: ``True`` when every incoming tensor must be flattened
-            and concatenated along features; ``False`` when every incoming
-            tensor is spatial and can instead be pooled to a common
-            ``(height, width)`` and concatenated along channels.
+        flatten_inputs: Whether the merged tensor is flattened before it is
+            passed to the target layer. Spatial parents are always pooled and
+            concatenated before this optional flattening.
         pooled_height: Common height each spatial input is pooled to. Only
             meaningful when ``flatten_inputs`` is ``False``.
         pooled_width: Common width each spatial input is pooled to. Only
@@ -197,10 +189,12 @@ def compute_merge_strategy(
 ) -> MergeStrategy:
     """Decide how to combine several incoming tensors for one target layer.
 
-    Implements Decision #3 from the module docstring: flatten-and-concatenate
-    unless every input is spatial and the target is a ``conv`` layer, in which
-    case each input is pooled to the smallest ``(height, width)`` among them
-    and concatenated along channels.
+    Spatial parents are max-pooled to the smallest parent resolution and
+    concatenated along channels, as prescribed for image classification in the
+    source. Dense/output targets flatten that merged feature map afterwards.
+    Flat parents are concatenated along features. Mixing spatial and flat
+    parents, or feeding a flat tensor to a convolution, is rejected because the
+    source specifies no semantics that would preserve the encoded layer types.
 
     Args:
         incoming_shapes: The shapes of the target's enabled incoming edges, in
@@ -210,11 +204,22 @@ def compute_merge_strategy(
     Returns:
         The merge strategy for combining ``incoming_shapes``.
     """
-    must_flatten = target_layer_type in ("dense", "output") or any(
-        not shape.is_spatial for shape in incoming_shapes
-    )
+    if not incoming_shapes:
+        raise IncompatibleTensorShapesError("a retained non-input layer has no parents")
 
-    if must_flatten:
+    has_spatial_inputs = any(shape.is_spatial for shape in incoming_shapes)
+    has_flat_inputs = any(not shape.is_spatial for shape in incoming_shapes)
+    if has_spatial_inputs and has_flat_inputs:
+        raise IncompatibleTensorShapesError(
+            "cannot merge spatial and flat parent tensors without an operation "
+            "not encoded by the chromosome"
+        )
+
+    if has_flat_inputs:
+        if target_layer_type == "conv":
+            raise IncompatibleTensorShapesError(
+                "a convolutional layer cannot consume a flat parent tensor"
+            )
         return MergeStrategy(
             flatten_inputs=True,
             pooled_height=0,
@@ -223,12 +228,18 @@ def compute_merge_strategy(
             merged_features=sum(shape.element_count for shape in incoming_shapes),
         )
 
+    pooled_height = min(shape.height for shape in incoming_shapes)
+    pooled_width = min(shape.width for shape in incoming_shapes)
+    merged_channels = sum(shape.channels for shape in incoming_shapes)
+    flatten_inputs = target_layer_type in ("dense", "output")
     return MergeStrategy(
-        flatten_inputs=False,
-        pooled_height=min(shape.height for shape in incoming_shapes),
-        pooled_width=min(shape.width for shape in incoming_shapes),
-        merged_channels=sum(shape.channels for shape in incoming_shapes),
-        merged_features=0,
+        flatten_inputs=flatten_inputs,
+        pooled_height=pooled_height,
+        pooled_width=pooled_width,
+        merged_channels=merged_channels,
+        merged_features=(
+            merged_channels * pooled_height * pooled_width if flatten_inputs else 0
+        ),
     )
 
 
@@ -248,12 +259,12 @@ def propagate_tensor_shapes(
     - ``input`` — always ``input_shape``.
     - ``conv`` on a spatial merge — ``spatial(number_of_filters, height, width)``,
       where ``(height, width)`` is the merge's pooled size, unchanged by the
-      convolution itself because kernels use ``"same"`` padding (Task 2). If
+      convolution itself because kernels use ``"same"`` padding. If
       ``is_followed_by_max_pooling`` and both dimensions are at least 2, the
       size is halved (2x2 max pool, stride 2); otherwise pooling is skipped
       rather than shrinking a map to nothing.
-    - ``conv`` on a flattened merge — coerced per Decision #4 to
-      ``flat(number_of_filters)``.
+      A flat input is incompatible and raises
+      :class:`IncompatibleTensorShapesError` rather than changing layer type.
     - ``dense`` — always ``flat(number_of_units)``, regardless of the merge.
     - ``output`` — always ``flat(number_of_classes)``, regardless of the merge.
       ``number_of_classes`` has no default: it is a property of the
@@ -304,18 +315,14 @@ def propagate_tensor_shapes(
         merge_strategy = compute_merge_strategy(incoming_shapes, node_gene.layer_type)
 
         if node_gene.layer_type == "conv":
-            if merge_strategy.flatten_inputs:
-                # Decision #4: coerce to a dense layer so the genome stays buildable.
-                shapes_by_node_id[node_id] = TensorShape.flat(features=node_gene.number_of_filters)
-            else:
-                height = merge_strategy.pooled_height
-                width = merge_strategy.pooled_width
-                if node_gene.is_followed_by_max_pooling and height >= 2 and width >= 2:
-                    height //= 2
-                    width //= 2
-                shapes_by_node_id[node_id] = TensorShape.spatial(
-                    channels=node_gene.number_of_filters, height=height, width=width
-                )
+            height = merge_strategy.pooled_height
+            width = merge_strategy.pooled_width
+            if node_gene.is_followed_by_max_pooling and height >= 2 and width >= 2:
+                height //= 2
+                width //= 2
+            shapes_by_node_id[node_id] = TensorShape.spatial(
+                channels=node_gene.number_of_filters, height=height, width=width
+            )
         elif node_gene.layer_type == "dense":
             shapes_by_node_id[node_id] = TensorShape.flat(features=node_gene.number_of_units)
         else:  # "output"

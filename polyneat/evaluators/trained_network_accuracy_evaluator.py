@@ -34,8 +34,15 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from polyneat.algorithms.deepneat.deepneat_genome import (
+    DeepNEATGlobalHyperparameters,
+)
 from polyneat.core.component_protocols import Phenotype
 from polyneat.core.type_aliases import FitnessValue
+from polyneat.evaluators.deepneat_image_preprocessing import (
+    compute_training_feature_statistics,
+    preprocess_deepneat_batch,
+)
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -59,8 +66,10 @@ class TrainedNetworkAccuracyEvaluator:
     For each non-degenerate phenotype, in order: seed the RNG from
     ``(base_random_seed, generation_counter)``; reinitialize all trainable
     layers and normalization buffers; train with
-    Adam and cross-entropy loss for ``number_of_epochs`` passes over shuffled
-    minibatches of the training set; switch to evaluation mode and measure
+    the chromosome's SGD learning-rate/momentum/Nesterov genes and
+    cross-entropy loss for ``number_of_epochs`` passes over shuffled
+    minibatches of the training set; apply its image-preprocessing genes;
+    switch to evaluation mode and measure
     accuracy on the validation set in minibatches, under ``torch.no_grad()``.
     Trained weights are never written anywhere -- DeepNEAT does not inherit
     them (see module docstring) -- so nothing here can leak back into a
@@ -111,7 +120,8 @@ class TrainedNetworkAccuracyEvaluator:
             validation_labels: Long tensor of class indices, shape
                 ``(num_validation_samples,)``.
             number_of_epochs: Passes over the training set per phenotype.
-            learning_rate: Adam's learning rate.
+            learning_rate: Backwards-compatible fallback learning rate for a
+                phenotype without DeepNEAT global genes.
             batch_size: Minibatch size for both training and validation.
             device_for_computation: Device the datasets and every phenotype
                 train on.
@@ -188,6 +198,9 @@ class TrainedNetworkAccuracyEvaluator:
             device_for_computation
         )
         self._validation_labels = validation_labels.to(torch.long).to(device_for_computation)
+        self._training_feature_mean, self._training_feature_standard_deviation = (
+            compute_training_feature_statistics(self._train_features)
+        )
         self._number_of_epochs = number_of_epochs
         self._learning_rate = learning_rate
         self._batch_size = batch_size
@@ -269,9 +282,18 @@ class TrainedNetworkAccuracyEvaluator:
         return fitness_values
 
     def _train_phenotype(self, phenotype: Phenotype) -> None:
-        """Run ``number_of_epochs`` passes of Adam over shuffled minibatches."""
+        """Train with the chromosome's evolved SGD and preprocessing genes."""
         phenotype.train()
-        optimizer = torch.optim.Adam(phenotype.parameters(), lr=self._learning_rate)
+        global_hyperparameters = getattr(phenotype, "global_hyperparameters", None)
+        if isinstance(global_hyperparameters, DeepNEATGlobalHyperparameters):
+            optimizer = torch.optim.SGD(
+                phenotype.parameters(),
+                lr=global_hyperparameters.learning_rate,
+                momentum=global_hyperparameters.momentum,
+                nesterov=global_hyperparameters.uses_nesterov_momentum,
+            )
+        else:
+            optimizer = torch.optim.Adam(phenotype.parameters(), lr=self._learning_rate)
         loss_function = nn.CrossEntropyLoss()
         number_of_training_samples = self._train_features.shape[0]
 
@@ -286,7 +308,16 @@ class TrainedNetworkAccuracyEvaluator:
                     # one. Drop it here, in training only -- never in validation.
                     continue
                 optimizer.zero_grad()
-                batch_logits = phenotype.forward_pass(self._train_features[batch_indices])
+                batch_features = self._train_features[batch_indices]
+                if isinstance(global_hyperparameters, DeepNEATGlobalHyperparameters):
+                    batch_features = preprocess_deepneat_batch(
+                        batch_features,
+                        global_hyperparameters,
+                        self._training_feature_mean,
+                        self._training_feature_standard_deviation,
+                        training=True,
+                    )
+                batch_logits = phenotype.forward_pass(batch_features)
                 loss = loss_function(batch_logits, self._train_labels[batch_indices])
                 loss.backward()
                 optimizer.step()
@@ -298,12 +329,20 @@ class TrainedNetworkAccuracyEvaluator:
         if number_of_validation_samples == 0:
             return 0.0
         number_of_correct_predictions = 0
+        global_hyperparameters = getattr(phenotype, "global_hyperparameters", None)
         with torch.no_grad():
             for batch_start in range(0, number_of_validation_samples, self._batch_size):
                 batch_end = batch_start + self._batch_size
-                batch_logits = phenotype.forward_pass(
-                    self._validation_features[batch_start:batch_end]
-                )
+                batch_features = self._validation_features[batch_start:batch_end]
+                if isinstance(global_hyperparameters, DeepNEATGlobalHyperparameters):
+                    batch_features = preprocess_deepneat_batch(
+                        batch_features,
+                        global_hyperparameters,
+                        self._training_feature_mean,
+                        self._training_feature_standard_deviation,
+                        training=False,
+                    )
+                batch_logits = phenotype.forward_pass(batch_features)
                 predicted_labels = torch.argmax(batch_logits, dim=1)
                 number_of_correct_predictions += int(
                     (predicted_labels == self._validation_labels[batch_start:batch_end]).sum()

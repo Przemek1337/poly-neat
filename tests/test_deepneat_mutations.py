@@ -5,6 +5,7 @@ import pytest
 
 from polyneat.algorithms.deepneat.deepneat_genome import (
     DeepNEATGenome,
+    DeepNEATGlobalHyperparameters,
     LayerNodeGene,
     TensorEdgeGene,
 )
@@ -20,12 +21,17 @@ from polyneat.algorithms.deepneat.mutations.add_tensor_edge_mutation import (
 from polyneat.algorithms.deepneat.mutations.deepneat_composite_mutation import (
     DeepNEATCompositeMutation,
 )
+from polyneat.algorithms.deepneat.mutations.global_hyperparameter_mutation import (
+    GlobalHyperparameterMutation,
+    draw_global_hyperparameters,
+)
 from polyneat.algorithms.deepneat.mutations.layer_hyperparameter_mutation import (
     LayerHyperparameterMutation,
 )
 from polyneat.algorithms.deepneat.mutations.toggle_tensor_edge_mutation import (
     ToggleTensorEdgeMutation,
 )
+from polyneat.configs.deepneat.deepneat_config import DeepNEATConfig
 
 _FILTERS = (16, 32, 64, 128)
 _KERNELS = (1, 3, 5)
@@ -282,3 +288,66 @@ def test_composite_applies_operators_in_order(tracker) -> None:
     )
     composite.apply_to_genome(_minimal_genome(), np.random.default_rng(0), tracker)
     assert calls == ["a", "b", "c"]
+
+
+def test_global_hyperparameters_are_drawn_inside_source_ranges() -> None:
+    config = DeepNEATConfig(
+        input_image_height=32,
+        input_image_width=32,
+        global_hue_shift_degrees_max=45.0,
+        global_saturation_value_shift_max=0.5,
+        global_saturation_value_scale_max=0.5,
+        global_cropped_image_size_min=26,
+        global_cropped_image_size_max=32,
+        global_spatial_scaling_max=0.3,
+        available_horizontal_flip_options=(False, True),
+        available_variance_normalization_options=(False, True),
+    )
+    value = draw_global_hyperparameters(config, np.random.default_rng(0))
+    assert 1e-4 <= value.learning_rate <= 0.1
+    assert 0.68 <= value.momentum <= 0.99
+    assert 0.0 <= value.hue_shift_degrees <= 45.0
+    assert 26 <= value.cropped_image_size <= 32
+    assert 0.0 <= value.spatial_scaling <= 0.3
+
+
+def test_global_mutation_changes_only_one_gene_and_stays_in_range(tracker) -> None:
+    config = DeepNEATConfig(
+        input_image_height=32,
+        input_image_width=32,
+        global_hue_shift_degrees_max=45.0,
+        global_saturation_value_shift_max=0.5,
+        global_saturation_value_scale_max=0.5,
+        global_cropped_image_size_min=26,
+        global_cropped_image_size_max=32,
+        global_spatial_scaling_max=0.3,
+        available_horizontal_flip_options=(False, True),
+        available_variance_normalization_options=(False, True),
+    )
+    genome = DeepNEATGenome(
+        node_genes=_minimal_genome().node_genes,
+        edge_genes=_minimal_genome().edge_genes,
+        global_hyperparameters=DeepNEATGlobalHyperparameters(
+            learning_rate=0.01,
+            momentum=0.8,
+            cropped_image_size=28,
+        ),
+    )
+    mutation = GlobalHyperparameterMutation(1.0, config)
+    observed_change = False
+    for seed in range(40):
+        result = mutation.apply_to_genome(
+            genome, np.random.default_rng(seed), tracker
+        )
+        before = genome.global_hyperparameters
+        after = result.global_hyperparameters
+        changed_fields = sum(
+            getattr(before, field_name) != getattr(after, field_name)
+            for field_name in before.__dataclass_fields__
+        )
+        assert changed_fields <= 1
+        observed_change |= changed_fields == 1
+        assert config.global_learning_rate_min <= after.learning_rate <= 0.1
+        assert 0.68 <= after.momentum <= 0.99
+        assert 26 <= after.cropped_image_size <= 32
+    assert observed_change

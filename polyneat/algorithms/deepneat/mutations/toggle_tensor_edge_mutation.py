@@ -88,4 +88,5 @@ class ToggleTensorEdgeMutation:
                 else edge
                 for position, edge in enumerate(genome.edge_genes)
             ),
+            global_hyperparameters=genome.global_hyperparameters,
         )

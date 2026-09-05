@@ -9,26 +9,16 @@ autograd graph so a downstream trainer can call ``.backward()`` on the result.
 
 Two things happen here that are not decided elsewhere:
 
-- **Degeneracy without execution.** A genome can be unbuildable in two ways —
-  no enabled path from input to output survives pruning (Task 7's
-  :func:`~polyneat.algorithms.deepneat.layer_shape_propagation
-  .prune_to_nodes_on_an_input_output_path`), or the parameter count of what
-  *would* be built exceeds the caller's budget. Either sets ``is_degenerate``
-  before ``forward_pass`` is ever called, so a multi-hour evolutionary run can
-  reject an oversized genome by reading a flag instead of running it on the
-  GPU. In the budget case the module dict that was already built is discarded
-  immediately after being counted, so the rejected genome's parameters do not
-  linger in memory.
-- **Conv-on-flat coercion (Decision #4).** This is this library's own
-  reconstruction, not a rule taken from the source paper — see the module
-  docstring of :mod:`polyneat.algorithms.deepneat.layer_shape_propagation` for
-  the full statement of what the paper does and does not settle. What that
-  module decides in shape arithmetic, this module carries out in modules: a
-  ``conv`` node whose merged input is flat (not spatial) is built as an
-  ``nn.Linear`` with ``out_features = number_of_filters`` rather than as a
-  ``Conv2d``, so every genome the mutation operators can produce is buildable
-  into a network, with no operator needing to inspect the graph to avoid an
-  unbuildable combination.
+- **Degeneracy without execution.** A genome is rejected when no enabled path
+  from input to output survives pruning, its encoded layer types have
+  incompatible tensor shapes, or an optional caller-supplied parameter budget
+  is exceeded. Each case sets ``is_degenerate`` before ``forward_pass`` runs.
+  The parameter limit is a library safety extension and can be disabled for a
+  source-only run.
+- **Faithful layer decoding.** Every retained node is expressed as the layer
+  type encoded in the chromosome. A graph mixing incompatible spatial and flat
+  tensors is marked degenerate; it is never made executable by silently
+  replacing a convolution with a linear layer.
 
 References:
     Miikkulainen, R., Liang, J., Meyerson, E., Rawal, A., Fink, D., Francon, O., Raju, B.,
@@ -48,6 +38,7 @@ from torch import nn
 
 from polyneat.algorithms.deepneat.deepneat_genome import DeepNEATGenome, LayerNodeGene
 from polyneat.algorithms.deepneat.layer_shape_propagation import (
+    IncompatibleTensorShapesError,
     MergeStrategy,
     TensorShape,
     compute_merge_strategy,
@@ -64,7 +55,7 @@ class TorchLayerStackPhenotype(nn.Module):
     """A DeepNEAT genome expressed as trainable ``torch.nn`` modules.
 
     Construction prunes the genome to the nodes that sit on some enabled
-    input-to-output path (Task 7), propagates tensor shapes along that pruned
+    input-to-output path, propagates tensor shapes along that pruned
     graph, and builds one ``nn.Module`` per retained non-input node from its
     :class:`~polyneat.algorithms.deepneat.deepneat_genome.LayerNodeGene`
     hyperparameters and its incoming
@@ -80,7 +71,8 @@ class TorchLayerStackPhenotype(nn.Module):
 
     Attributes:
         is_degenerate: ``True`` when the genome has no enabled input-to-output
-            path, or when its parameter count exceeds the configured budget.
+            path, has incompatible encoded layer shapes, or exceeds an enabled
+            parameter budget.
             A degenerate phenotype's ``forward_pass`` returns zeros without
             executing any module.
         total_parameter_count: Number of scalar parameters across every built
@@ -100,7 +92,7 @@ class TorchLayerStackPhenotype(nn.Module):
         genome: DeepNEATGenome,
         input_shape: TensorShape,
         number_of_classes: int,
-        maximum_total_parameter_count: int,
+        maximum_total_parameter_count: int | None,
         device_for_computation: torch.device,
     ) -> None:
         """Prune, propagate shapes, and build one module per surviving layer node.
@@ -110,9 +102,9 @@ class TorchLayerStackPhenotype(nn.Module):
             input_shape: Shape of the tensor ``forward_pass`` will be given,
                 excluding the batch dimension.
             number_of_classes: Width of the output layer's logits.
-            maximum_total_parameter_count: Parameter budget. Exceeding it
-                marks the phenotype degenerate instead of raising, so a
-                caller can keep evaluating the rest of a population.
+            maximum_total_parameter_count: Optional parameter budget.
+                Exceeding it marks the phenotype degenerate instead of
+                raising. ``None`` disables this library safety extension.
             device_for_computation: Device every module and tensor lives on.
         """
         super().__init__()
@@ -122,6 +114,8 @@ class TorchLayerStackPhenotype(nn.Module):
         self.total_parameter_count = 0
         self.number_of_layer_modules = 0
         self._layer_modules_by_node_id = nn.ModuleDict()
+        self.global_hyperparameters = genome.global_hyperparameters
+        self._initial_weight_scaling_by_node_id: dict[int, float] = {}
 
         retained_node_ids = prune_to_nodes_on_an_input_output_path(genome)
         if not retained_node_ids:
@@ -132,12 +126,26 @@ class TorchLayerStackPhenotype(nn.Module):
             self.to(device_for_computation)
             return
 
-        shapes_by_node_id = propagate_tensor_shapes(
-            genome=genome,
-            retained_node_ids=retained_node_ids,
-            input_shape=input_shape,
-            number_of_classes=number_of_classes,
-        )
+        effective_input_shape = input_shape
+        cropped_image_size = genome.global_hyperparameters.cropped_image_size
+        if input_shape.is_spatial and cropped_image_size > 0:
+            effective_input_shape = TensorShape.spatial(
+                channels=input_shape.channels,
+                height=cropped_image_size,
+                width=cropped_image_size,
+            )
+        try:
+            shapes_by_node_id = propagate_tensor_shapes(
+                genome=genome,
+                retained_node_ids=retained_node_ids,
+                input_shape=effective_input_shape,
+                number_of_classes=number_of_classes,
+            )
+        except IncompatibleTensorShapesError as error:
+            logger.info("genome has incompatible layer shapes; phenotype is degenerate: %s", error)
+            self.is_degenerate = True
+            self.to(device_for_computation)
+            return
 
         enabled_edges_within_retained_nodes = [
             (edge.source_node_id, edge.target_node_id)
@@ -172,6 +180,9 @@ class TorchLayerStackPhenotype(nn.Module):
             layer_modules_by_node_id[str(node_id)] = self._build_layer_module(
                 node_gene, merge_strategy
             )
+            self._initial_weight_scaling_by_node_id[node_id] = (
+                node_gene.initial_weight_scaling
+            )
 
         total_parameter_count = sum(
             parameter.numel() for parameter in layer_modules_by_node_id.parameters()
@@ -186,7 +197,10 @@ class TorchLayerStackPhenotype(nn.Module):
         self.total_parameter_count = total_parameter_count
         self.number_of_layer_modules = len(layer_modules_by_node_id)
 
-        if total_parameter_count > maximum_total_parameter_count:
+        if (
+            maximum_total_parameter_count is not None
+            and total_parameter_count > maximum_total_parameter_count
+        ):
             logger.info(
                 "phenotype has %d parameters, over the budget of %d; marking degenerate",
                 total_parameter_count,
@@ -198,6 +212,7 @@ class TorchLayerStackPhenotype(nn.Module):
             self._layer_modules_by_node_id = nn.ModuleDict()
 
         self.to(device_for_computation)
+        self._apply_initial_weight_scaling()
 
     def _build_layer_module(
         self, node_gene: LayerNodeGene, merge_strategy: MergeStrategy
@@ -207,7 +222,7 @@ class TorchLayerStackPhenotype(nn.Module):
         Args:
             node_gene: The node's hyperparameters.
             merge_strategy: How the node's incoming tensors are combined,
-                from Task 7's :func:`compute_merge_strategy`.
+                from :func:`compute_merge_strategy`.
 
         Returns:
             An ``nn.Sequential`` for ``conv``/``dense`` nodes, or a bare
@@ -215,13 +230,6 @@ class TorchLayerStackPhenotype(nn.Module):
             ``CrossEntropyLoss`` expects logits).
         """
         if node_gene.layer_type == "conv":
-            if merge_strategy.flatten_inputs:
-                # Decision #4: coerce to a dense-like module, see module docstring.
-                return self._build_dense_like_module(
-                    in_features=merge_strategy.merged_features,
-                    out_features=node_gene.number_of_filters,
-                    node_gene=node_gene,
-                )
             return self._build_conv_module(node_gene, merge_strategy)
         if node_gene.layer_type == "dense":
             return self._build_dense_like_module(
@@ -260,7 +268,7 @@ class TorchLayerStackPhenotype(nn.Module):
     def _build_dense_like_module(
         self, in_features: int, out_features: int, node_gene: LayerNodeGene
     ) -> nn.Module:
-        """Build a ``Linear`` block shared by ``dense`` nodes and coerced ``conv`` nodes."""
+        """Build a ``Linear`` block for a dense node."""
         layers: list[nn.Module] = [nn.Linear(in_features, out_features)]
         if node_gene.uses_batch_normalization:
             layers.append(nn.BatchNorm1d(out_features))
@@ -273,16 +281,19 @@ class TorchLayerStackPhenotype(nn.Module):
         self, incoming_tensors: list[torch.Tensor], merge_strategy: MergeStrategy
     ) -> torch.Tensor:
         """Combine a node's incoming tensors per its stored :class:`MergeStrategy`."""
+        if merge_strategy.pooled_height > 0:
+            pooled_tensors = [
+                functional.adaptive_max_pool2d(
+                    tensor, (merge_strategy.pooled_height, merge_strategy.pooled_width)
+                )
+                for tensor in incoming_tensors
+            ]
+            merged_tensor = torch.cat(pooled_tensors, dim=1)
+        else:
+            merged_tensor = torch.cat(incoming_tensors, dim=1)
         if merge_strategy.flatten_inputs:
-            flattened_tensors = [torch.flatten(tensor, 1) for tensor in incoming_tensors]
-            return torch.cat(flattened_tensors, dim=1)
-        pooled_tensors = [
-            functional.adaptive_avg_pool2d(
-                tensor, (merge_strategy.pooled_height, merge_strategy.pooled_width)
-            )
-            for tensor in incoming_tensors
-        ]
-        return torch.cat(pooled_tensors, dim=1)
+            return torch.flatten(merged_tensor, 1)
+        return merged_tensor
 
     def forward_pass(self, input_tensor: torch.Tensor) -> torch.Tensor:
         """Evaluate the network on a batch of images, keeping the autograd graph.
@@ -342,6 +353,22 @@ class TorchLayerStackPhenotype(nn.Module):
             reset_parameters = getattr(module, "reset_parameters", None)
             if callable(reset_parameters):
                 reset_parameters()
+        self._apply_initial_weight_scaling()
+
+    def _apply_initial_weight_scaling(self) -> None:
+        """Apply every hidden layer's evolved initial-weight multiplier."""
+        with torch.no_grad():
+            for node_id, scaling in self._initial_weight_scaling_by_node_id.items():
+                module_key = str(node_id)
+                if module_key not in self._layer_modules_by_node_id:
+                    continue
+                module = self._layer_modules_by_node_id[module_key]
+                if not isinstance(module, nn.Sequential):
+                    continue
+                trainable_layer = module[0]
+                weight = getattr(trainable_layer, "weight", None)
+                if weight is not None:
+                    weight.mul_(scaling)
 
     def reset_recurrent_state(self) -> None:
         return None

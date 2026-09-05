@@ -8,6 +8,7 @@ survival-threshold truncation, and crossover/mutation reproduction.
 
 from __future__ import annotations
 
+import inspect
 import math
 import time
 from dataclasses import dataclass, field
@@ -689,11 +690,27 @@ class NEATAlgorithm:
                 fitter_parent, less_fit_parent = first_parent_genome, second_parent_genome
             else:
                 fitter_parent, less_fit_parent = second_parent_genome, first_parent_genome
-            crossover_child_genome = self.crossover.apply_to_parents(
-                fitter_parent=fitter_parent,
-                less_fit_parent=less_fit_parent,
-                rng=rng,
-            )
+            crossover_parameters = inspect.signature(
+                self.crossover.apply_to_parents
+            ).parameters
+            if "parents_have_equal_fitness" in crossover_parameters:
+                crossover_child_genome = self.crossover.apply_to_parents(
+                    fitter_parent=fitter_parent,
+                    less_fit_parent=less_fit_parent,
+                    rng=rng,
+                    parents_have_equal_fitness=(
+                        first_parent_fitness == second_parent_fitness
+                    ),
+                )
+            else:
+                # Keep custom crossover operators written against the original
+                # three-argument protocol operational. Built-in operators use
+                # the explicit tie flag above.
+                crossover_child_genome = self.crossover.apply_to_parents(
+                    fitter_parent=fitter_parent,
+                    less_fit_parent=less_fit_parent,
+                    rng=rng,
+                )
         else:
             crossover_child_genome, _ = self._select_single_parent_with_fitness(
                 candidate_genomes=reproducing_member_genomes,

@@ -34,6 +34,7 @@ class _FirstParentCrossover:
     def apply_to_parents(
         self, fitter_parent: NEATGenome, less_fit_parent: NEATGenome, rng: Generator
     ) -> NEATGenome:
+        del less_fit_parent, rng
         return fitter_parent
 
 

@@ -122,3 +122,35 @@ def test_crossing_a_genome_with_itself_reproduces_it(crossover) -> None:
         e.innovation_id for e in parent.edge_genes
     }
     assert {n.node_id for n in child.node_genes} == {n.node_id for n in parent.node_genes}
+
+
+def test_equal_fitness_allows_unique_genes_from_either_parent(crossover) -> None:
+    observed_innovation_ids: set[int] = set()
+    for seed in range(100):
+        child = crossover.apply_to_parents(
+            _fitter_parent(),
+            _other_parent(),
+            np.random.default_rng(seed),
+            parents_have_equal_fitness=True,
+        )
+        observed_innovation_ids.update(edge.innovation_id for edge in child.edge_genes)
+    assert 5 in observed_innovation_ids
+    assert 7 in observed_innovation_ids
+
+
+def test_disabled_matching_gene_uses_neat_disabled_inheritance_rule() -> None:
+    fitter = _fitter_parent()
+    other = DeepNEATGenome(
+        node_genes=_other_parent().node_genes,
+        edge_genes=(
+            TensorEdgeGene(0, 0, 2, False),
+            TensorEdgeGene(5, 2, 1, True),
+        ),
+    )
+    always_disabled = DeepNEATCrossover(
+        probability_of_inheriting_from_fitter_parent_for_matching_genes=1.0,
+        probability_of_child_gene_remaining_disabled_when_either_parent_disabled=1.0,
+    )
+    child = always_disabled.apply_to_parents(fitter, other, np.random.default_rng(0))
+    matching_edge = next(edge for edge in child.edge_genes if edge.innovation_id == 0)
+    assert not matching_edge.is_enabled

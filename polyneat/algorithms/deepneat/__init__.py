@@ -12,6 +12,7 @@ from polyneat.algorithms.deepneat.deepneat_algorithm import DeepNEATAlgorithm
 from polyneat.algorithms.deepneat.deepneat_crossover import DeepNEATCrossover
 from polyneat.algorithms.deepneat.deepneat_genome import (
     DeepNEATGenome,
+    DeepNEATGlobalHyperparameters,
     InvalidDeepNEATGenomeError,
     LayerNodeGene,
     TensorEdgeGene,
@@ -35,6 +36,9 @@ from polyneat.algorithms.deepneat.mutations.add_tensor_edge_mutation import (
 from polyneat.algorithms.deepneat.mutations.deepneat_composite_mutation import (
     DeepNEATCompositeMutation,
 )
+from polyneat.algorithms.deepneat.mutations.global_hyperparameter_mutation import (
+    GlobalHyperparameterMutation,
+)
 from polyneat.algorithms.deepneat.mutations.layer_hyperparameter_mutation import (
     LayerHyperparameterMutation,
 )
@@ -52,10 +56,12 @@ __all__ = [
     "DeepNEATCompositeMutation",
     "DeepNEATCrossover",
     "DeepNEATGenome",
+    "DeepNEATGlobalHyperparameters",
     "DeepNEATInnovationTracker",
     "DeepNEATPhenotypeDecoder",
     "DeepNEATSpeciator",
     "InvalidDeepNEATGenomeError",
+    "GlobalHyperparameterMutation",
     "LayerHyperparameterMutation",
     "LayerNodeGene",
     "TensorEdgeGene",

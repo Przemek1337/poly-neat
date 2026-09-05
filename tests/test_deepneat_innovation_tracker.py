@@ -27,10 +27,9 @@ def test_different_edges_get_different_innovation_ids() -> None:
     assert first != second
 
 
-def test_markings_survive_a_generation_boundary() -> None:
-    # DeepNEAT keeps a master innovation list for the whole search, like EXACT:
-    # architectures are compared across many generations, so re-issuing an id
-    # for an edge seen earlier would misalign crossover.
+def test_marking_deduplication_resets_at_a_generation_boundary() -> None:
+    # NEAT historical markings deduplicate matching mutations only within one
+    # generation; the monotonic id counter itself is not reset.
     tracker = DeepNEATInnovationTracker()
     before = tracker.get_or_assign_innovation_id_for_connection(
         source_node_id=0, target_node_id=1
@@ -39,7 +38,7 @@ def test_markings_survive_a_generation_boundary() -> None:
     after = tracker.get_or_assign_innovation_id_for_connection(
         source_node_id=0, target_node_id=1
     )
-    assert before == after
+    assert before != after
 
 
 def test_splitting_the_same_edge_twice_reuses_the_record() -> None:

@@ -23,8 +23,9 @@ class DeepNEATConfig(NEATConfig):
     Inherited NEAT fields that concern *connection weights* are unused: a
     DeepNEAT edge carries no weight, because weights live inside layers and are
     trained by gradient descent during fitness evaluation. The speciation
-    coefficients are reused, with ``c3`` weighting the layer-hyperparameter
-    distance instead of a weight difference.
+    coefficients are reused. ``c3`` weights an optional library-defined
+    layer-hyperparameter distance; the publication does not define that term,
+    so source profiles set it to zero.
 
     Attributes:
         input_image_channels: Channels of the task's input tensor.
@@ -39,13 +40,15 @@ class DeepNEATConfig(NEATConfig):
         dropout_rate_max: Upper end of the sampled dropout range.
         probability_of_new_conv_layer: Chance that a newly inserted layer is a
             conv rather than a dense layer.
-        maximum_total_parameter_count: Genomes whose phenotype exceeds this are
-            degenerate and score zero. The VRAM fuse - without it a single
-            oversized genome can kill an entire run with an OOM.
+        maximum_total_parameter_count: Optional library safety limit. Genomes
+            above it are degenerate and score zero. ``None`` disables the
+            limit, matching the published algorithm, which reports no such
+            fitness constraint.
         training_epochs_per_evaluation: Epochs each genome is trained for before
             being scored. Weights are discarded afterwards; DeepNEAT does not
             inherit them.
-        training_learning_rate: Adam learning rate used during evaluation.
+        training_learning_rate: Fallback learning rate for phenotypes without
+            chromosome-wide DeepNEAT training genes.
         training_batch_size: Minibatch size used during evaluation.
         use_deterministic_training_algorithms: Whether to request deterministic
             cuDNN kernels. Costs throughput; off by default.
@@ -64,16 +67,47 @@ class DeepNEATConfig(NEATConfig):
     available_filter_counts: tuple[int, ...] = (16, 32, 64, 128)
     available_kernel_sizes: tuple[int, ...] = (1, 3, 5)
     available_dense_unit_counts: tuple[int, ...] = (64, 128, 256)
+    number_of_filters_min: int | None = None
+    number_of_filters_max: int | None = None
     dropout_rate_min: float = 0.0
     dropout_rate_max: float = 0.5
+    initial_weight_scaling_min: float = 0.0
+    initial_weight_scaling_max: float = 2.0
+    available_batch_normalization_options: tuple[bool, ...] = (False,)
     probability_of_new_conv_layer: float = 0.7
+    gaussian_mutation_standard_deviation_fraction: float = 0.1
+
+    global_learning_rate_min: float = 1e-4
+    global_learning_rate_max: float = 0.1
+    global_momentum_min: float = 0.68
+    global_momentum_max: float = 0.99
+    global_hue_shift_degrees_min: float = 0.0
+    global_hue_shift_degrees_max: float = 0.0
+    global_saturation_value_shift_min: float = 0.0
+    global_saturation_value_shift_max: float = 0.0
+    global_saturation_value_scale_min: float = 0.0
+    global_saturation_value_scale_max: float = 0.0
+    global_cropped_image_size_min: int = 0
+    global_cropped_image_size_max: int = 0
+    global_spatial_scaling_min: float = 0.0
+    global_spatial_scaling_max: float = 0.0
+    available_horizontal_flip_options: tuple[bool, ...] = (False,)
+    available_variance_normalization_options: tuple[bool, ...] = (False,)
+    available_nesterov_momentum_options: tuple[bool, ...] = (False, True)
 
     probability_of_add_layer_node_mutation: float = 0.15
     probability_of_add_tensor_edge_mutation: float = 0.15
     probability_of_toggle_tensor_edge_mutation: float = 0.05
     probability_of_layer_hyperparameter_mutation: float = 0.5
+    probability_of_global_hyperparameter_mutation: float = 0.5
 
-    maximum_total_parameter_count: int = 20_000_000
+    # DeepNEAT's sources do not define a node-hyperparameter contribution to
+    # compatibility distance. Keep the optional PolyNEAT extension off unless
+    # a caller explicitly opts in.
+    compatibility_distance_coefficient_weight_difference_c3: float = 0.0
+
+    # The published algorithm reports no parameter-count fitness cutoff.
+    maximum_total_parameter_count: int | None = None
 
     training_epochs_per_evaluation: int = 2
     training_learning_rate: float = 1e-3
@@ -99,6 +133,7 @@ class DeepNEATConfig(NEATConfig):
             "probability_of_add_tensor_edge_mutation",
             "probability_of_toggle_tensor_edge_mutation",
             "probability_of_layer_hyperparameter_mutation",
+            "probability_of_global_hyperparameter_mutation",
             "probability_of_new_conv_layer",
         ):
             value = getattr(self, probability_field_name)
@@ -134,6 +169,22 @@ class DeepNEATConfig(NEATConfig):
                     f"got {values}"
                 )
 
+        if (self.number_of_filters_min is None) != (self.number_of_filters_max is None):
+            raise ConfigurationError(
+                "number_of_filters_min and number_of_filters_max must either both be "
+                "set or both be null"
+            )
+        if self.number_of_filters_min is not None:
+            assert self.number_of_filters_max is not None
+            if (
+                self.number_of_filters_min < 1
+                or self.number_of_filters_max < self.number_of_filters_min
+            ):
+                raise ConfigurationError(
+                    "number_of_filters_min/max must satisfy 1 <= min <= max, got "
+                    f"{self.number_of_filters_min}/{self.number_of_filters_max}"
+                )
+
         if any(kernel_size % 2 == 0 for kernel_size in self.available_kernel_sizes):
             raise ConfigurationError(
                 f"available_kernel_sizes must contain only odd sizes so 'same' padding "
@@ -147,7 +198,86 @@ class DeepNEATConfig(NEATConfig):
                 f"({self.dropout_rate_max}) < 1.0"
             )
 
-        if self.maximum_total_parameter_count < 1:
+        if not (
+            0.0
+            <= self.initial_weight_scaling_min
+            <= self.initial_weight_scaling_max
+        ):
+            raise ConfigurationError(
+                "initial weight scaling must satisfy 0.0 <= min <= max, got "
+                f"{self.initial_weight_scaling_min}/{self.initial_weight_scaling_max}"
+            )
+        if not self.available_batch_normalization_options or any(
+            not isinstance(value, bool)
+            for value in self.available_batch_normalization_options
+        ):
+            raise ConfigurationError(
+                "available_batch_normalization_options must contain at least one boolean"
+            )
+        for option_field_name in (
+            "available_horizontal_flip_options",
+            "available_variance_normalization_options",
+            "available_nesterov_momentum_options",
+        ):
+            options = getattr(self, option_field_name)
+            if not options or any(not isinstance(value, bool) for value in options):
+                raise ConfigurationError(
+                    f"{option_field_name} must contain at least one boolean"
+                )
+        if self.gaussian_mutation_standard_deviation_fraction <= 0.0:
+            raise ConfigurationError(
+                "gaussian_mutation_standard_deviation_fraction must be > 0.0, got "
+                f"{self.gaussian_mutation_standard_deviation_fraction}"
+            )
+
+        for minimum_field_name, maximum_field_name in (
+            ("global_learning_rate_min", "global_learning_rate_max"),
+            ("global_momentum_min", "global_momentum_max"),
+            ("global_hue_shift_degrees_min", "global_hue_shift_degrees_max"),
+            (
+                "global_saturation_value_shift_min",
+                "global_saturation_value_shift_max",
+            ),
+            (
+                "global_saturation_value_scale_min",
+                "global_saturation_value_scale_max",
+            ),
+            ("global_spatial_scaling_min", "global_spatial_scaling_max"),
+        ):
+            minimum = getattr(self, minimum_field_name)
+            maximum = getattr(self, maximum_field_name)
+            if minimum < 0.0 or maximum < minimum:
+                raise ConfigurationError(
+                    f"{minimum_field_name}/{maximum_field_name} must satisfy "
+                    f"0.0 <= min <= max, got {minimum}/{maximum}"
+                )
+        if self.global_learning_rate_min <= 0.0:
+            raise ConfigurationError("global_learning_rate_min must be > 0.0")
+        if self.global_momentum_max >= 1.0:
+            raise ConfigurationError("global_momentum_max must be < 1.0")
+        if not (
+            0
+            <= self.global_cropped_image_size_min
+            <= self.global_cropped_image_size_max
+        ):
+            raise ConfigurationError(
+                "global cropped image size must satisfy 0 <= min <= max, got "
+                f"{self.global_cropped_image_size_min}/"
+                f"{self.global_cropped_image_size_max}"
+            )
+        if self.global_cropped_image_size_max > min(
+            self.input_image_height, self.input_image_width
+        ):
+            raise ConfigurationError(
+                "global_cropped_image_size_max must fit inside the configured image, got "
+                f"{self.global_cropped_image_size_max} for "
+                f"{self.input_image_height}x{self.input_image_width}"
+            )
+
+        if (
+            self.maximum_total_parameter_count is not None
+            and self.maximum_total_parameter_count < 1
+        ):
             raise ConfigurationError(
                 f"maximum_total_parameter_count must be >= 1, got "
                 f"{self.maximum_total_parameter_count}"

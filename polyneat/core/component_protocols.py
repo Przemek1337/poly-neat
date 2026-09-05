@@ -148,6 +148,8 @@ class CrossoverOperator(Protocol[GenomeType]):
         fitter_parent: GenomeType,
         less_fit_parent: GenomeType,
         rng: Generator,
+        *,
+        parents_have_equal_fitness: bool = False,
     ) -> GenomeType: ...
 
 

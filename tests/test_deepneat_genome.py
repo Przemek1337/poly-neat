@@ -4,6 +4,7 @@ import pytest
 
 from polyneat.algorithms.deepneat.deepneat_genome import (
     DeepNEATGenome,
+    DeepNEATGlobalHyperparameters,
     InvalidDeepNEATGenomeError,
     LayerNodeGene,
     TensorEdgeGene,
@@ -17,6 +18,7 @@ _CONV = LayerNodeGene(
     number_of_filters=32,
     kernel_size=3,
     dropout_rate=0.25,
+    initial_weight_scaling=1.5,
     uses_batch_normalization=True,
     is_followed_by_max_pooling=True,
 )
@@ -192,10 +194,18 @@ def test_serialization_round_trip_preserves_everything() -> None:
             TensorEdgeGene(innovation_id=3, source_node_id=0, target_node_id=1,
                            is_enabled=False),
         ),
+        global_hyperparameters=DeepNEATGlobalHyperparameters(
+            learning_rate=0.02,
+            momentum=0.8,
+            hue_shift_degrees=10.0,
+            cropped_image_size=28,
+            uses_horizontal_flips=True,
+        ),
     )
     restored = DeepNEATGenome.from_serializable_dict(genome.to_serializable_dict())
     assert restored.node_genes == genome.node_genes
     assert restored.edge_genes == genome.edge_genes
+    assert restored.global_hyperparameters == genome.global_hyperparameters
 
 
 def test_serializable_dict_is_json_friendly() -> None:

@@ -17,7 +17,7 @@ References:
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Literal
 
 from polyneat.nn.topology_utilities import compute_topological_order_of_node_ids
@@ -30,6 +30,52 @@ _HYPERPARAMETER_FREE_LAYER_TYPES: frozenset[str] = frozenset({"input", "output"}
 
 class InvalidDeepNEATGenomeError(ValueError):
     """Raised when a genome or a gene violates a structural invariant."""
+
+
+@dataclass(frozen=True)
+class DeepNEATGlobalHyperparameters:
+    """Training and image-preprocessing genes carried by a chromosome.
+
+    These are the global hyperparameters evolved in the CIFAR-10 DeepNEAT
+    experiment (Liang, 2018, Table 3.1). A crop size of ``0`` is the
+    backwards-compatible sentinel for "use the complete input image".
+    """
+
+    learning_rate: float = 1e-3
+    momentum: float = 0.9
+    hue_shift_degrees: float = 0.0
+    saturation_value_shift: float = 0.0
+    saturation_value_scale: float = 0.0
+    cropped_image_size: int = 0
+    spatial_scaling: float = 0.0
+    uses_horizontal_flips: bool = False
+    uses_variance_normalization: bool = False
+    uses_nesterov_momentum: bool = False
+
+    def __post_init__(self) -> None:
+        if self.learning_rate <= 0.0:
+            raise InvalidDeepNEATGenomeError(
+                f"learning_rate must be > 0.0, got {self.learning_rate}"
+            )
+        if not (0.0 <= self.momentum < 1.0):
+            raise InvalidDeepNEATGenomeError(
+                f"momentum must be in [0.0, 1.0), got {self.momentum}"
+            )
+        for field_name in (
+            "hue_shift_degrees",
+            "saturation_value_shift",
+            "saturation_value_scale",
+            "spatial_scaling",
+        ):
+            value = getattr(self, field_name)
+            if value < 0.0:
+                raise InvalidDeepNEATGenomeError(
+                    f"{field_name} must be >= 0.0, got {value}"
+                )
+        if self.cropped_image_size < 0:
+            raise InvalidDeepNEATGenomeError(
+                f"cropped_image_size must be >= 0, got {self.cropped_image_size}"
+            )
 
 
 @dataclass(frozen=True)
@@ -59,6 +105,7 @@ class LayerNodeGene:
     kernel_size: int | None = None
     number_of_units: int | None = None
     dropout_rate: float = 0.0
+    initial_weight_scaling: float = 1.0
     uses_batch_normalization: bool = False
     is_followed_by_max_pooling: bool = False
 
@@ -76,6 +123,11 @@ class LayerNodeGene:
         if not (0.0 <= self.dropout_rate < 1.0):
             raise InvalidDeepNEATGenomeError(
                 f"dropout_rate must be in [0.0, 1.0), got {self.dropout_rate}"
+            )
+        if self.initial_weight_scaling < 0.0:
+            raise InvalidDeepNEATGenomeError(
+                "initial_weight_scaling must be >= 0.0, got "
+                f"{self.initial_weight_scaling}"
             )
 
         if self.layer_type == "conv":
@@ -105,6 +157,7 @@ class LayerNodeGene:
                 or self.kernel_size is not None
                 or self.number_of_units is not None
                 or self.dropout_rate != 0.0
+                or self.initial_weight_scaling != 1.0
                 or self.uses_batch_normalization
                 or self.is_followed_by_max_pooling
             )
@@ -143,6 +196,9 @@ class DeepNEATGenome:
 
     node_genes: tuple[LayerNodeGene, ...]
     edge_genes: tuple[TensorEdgeGene, ...]
+    global_hyperparameters: DeepNEATGlobalHyperparameters = field(
+        default_factory=DeepNEATGlobalHyperparameters
+    )
 
     def __post_init__(self) -> None:
         """Validate the graph invariants.
@@ -286,6 +342,7 @@ class DeepNEATGenome:
                     "kernel_size": node.kernel_size,
                     "number_of_units": node.number_of_units,
                     "dropout_rate": node.dropout_rate,
+                    "initial_weight_scaling": node.initial_weight_scaling,
                     "uses_batch_normalization": node.uses_batch_normalization,
                     "is_followed_by_max_pooling": node.is_followed_by_max_pooling,
                 }
@@ -300,6 +357,7 @@ class DeepNEATGenome:
                 }
                 for edge in self.edge_genes
             ],
+            "global_hyperparameters": asdict(self.global_hyperparameters),
         }
 
     @classmethod
@@ -318,5 +376,8 @@ class DeepNEATGenome:
             ),
             edge_genes=tuple(
                 TensorEdgeGene(**edge_payload) for edge_payload in payload["tensor_edge_genes"]
+            ),
+            global_hyperparameters=DeepNEATGlobalHyperparameters(
+                **payload.get("global_hyperparameters", {})
             ),
         )

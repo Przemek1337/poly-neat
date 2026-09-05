@@ -88,6 +88,8 @@ class NEATCrossover:
         fitter_parent: NEATGenome,
         less_fit_parent: NEATGenome,
         rng: Generator,
+        *,
+        parents_have_equal_fitness: bool = False,
     ) -> NEATGenome:
         """Mate two parents into one child genome.
 
@@ -102,6 +104,7 @@ class NEATCrossover:
             The child genome, with any accidental directed cycles resolved
             by disabling the offending connections.
         """
+        del parents_have_equal_fitness
         fitter_parent_connections_by_innovation_id: dict[int, ConnectionGene] = {
             connection_gene.innovation_id: connection_gene
             for connection_gene in fitter_parent.connection_genes

@@ -7,12 +7,13 @@ fitness evaluation, so all training lives in the evaluator (see
 ``polyneat.evaluators.trained_network_accuracy_evaluator``), not in the
 generational loop. That is the reason ``advance_one_generation`` is **not**
 overridden here, unlike EXACT (which is Lamarckian and writes trained weights
-back into the genotype): DeepNEAT reuses NEAT's generational loop verbatim -
-speciation, fitness sharing, stagnation, offspring allocation, elitism and
-reproduction are all identical to vanilla NEAT. Only the genetics (genome
-encoding, the four mutation operators, crossover, the layer-hyperparameter
-speciation term, and the genome-to-phenotype decoder) differ, and those are
-swapped in through the ``_build_*`` factories.
+back into the genotype): DeepNEAT reuses the library's NEAT generational loop.
+This supplies the source-required speciation, per-species truncation,
+tournament selection and fitness-proportional species growth. The genetics
+(genome encoding, mutation operators, historical-marking crossover and the
+genome-to-phenotype decoder) are swapped in through the ``_build_*`` factories.
+The optional c3 layer-hyperparameter distance remains a library extension and
+is disabled by the source profile.
 
 References:
     Miikkulainen, R., Liang, J., Meyerson, E., Rawal, A., Fink, D., Francon, O., Raju, B.,
@@ -51,6 +52,9 @@ from polyneat.algorithms.deepneat.mutations.add_tensor_edge_mutation import (
 from polyneat.algorithms.deepneat.mutations.deepneat_composite_mutation import (
     DeepNEATCompositeMutation,
 )
+from polyneat.algorithms.deepneat.mutations.global_hyperparameter_mutation import (
+    GlobalHyperparameterMutation,
+)
 from polyneat.algorithms.deepneat.mutations.layer_hyperparameter_mutation import (
     LayerHyperparameterMutation,
 )
@@ -81,12 +85,12 @@ class DeepNEATAlgorithm(NEATAlgorithm):
     Build it with ``DeepNEATAlgorithm.from_config(deepneat_config)``; the
     trainer that turns a decoded phenotype into a fitness value lives in the
     evaluator, not on this class - this class only ever hands out untrained
-    phenotypes via ``phenotype_decoder``.
+phenotypes via ``phenotype_decoder``.
 
-    Generation 0 is fixed to a single input->output layer (a linear
-    classifier), identical across the whole population: spec decision #12
-    puts all diversity in mutation, none in the starting population. Because
-    of this, ``create_initial_population`` is overridden outright rather than
+    Generation 0 is fixed to a single input->output topology (a linear
+    classifier), while each chromosome draws its global training and
+    preprocessing genes independently. Because of this,
+    ``create_initial_population`` is overridden outright rather than
     dispatched through the ``initial_population_strategy`` registry, and the
     inherited ``NEATConfig.initial_population_strategy`` field is therefore
     **not consulted** - see ``from_config``, which logs a warning when a
@@ -136,8 +140,8 @@ class DeepNEATAlgorithm(NEATAlgorithm):
         if deepneat_config.initial_population_strategy != config_class_default_strategy:
             logger.warning(
                 "DeepNEATConfig.initial_population_strategy=%r has no effect: DeepNEAT "
-                "fixes generation 0 to a single input->output layer per spec decision "
-                "#12 and never consults this field.",
+                "fixes generation 0 to the source-required minimal input->output "
+                "topology and never consults this field.",
                 deepneat_config.initial_population_strategy,
             )
 
@@ -167,15 +171,21 @@ class DeepNEATAlgorithm(NEATAlgorithm):
 
     @classmethod
     def _build_innovation_tracker(cls, config: NEATConfig) -> GlobalInnovationTracker:
-        """DeepNEAT keeps a persistent master innovation list for the whole run."""
+        """Build the NEAT-style tracker with generation-local deduplication."""
         return DeepNEATInnovationTracker()
 
     @classmethod
     def _build_mutation(cls, config: NEATConfig) -> MutationOperator[NEATGenome]:
-        """Compose DeepNEAT's four operators in Task 4's fixed order."""
+        """Compose the configured DeepNEAT mutation operators."""
         deepneat_config = cast("DeepNEATConfig", config)
         composite_mutation = DeepNEATCompositeMutation(
             ordered_individual_mutations=[
+                GlobalHyperparameterMutation(
+                    probability_of_application=(
+                        deepneat_config.probability_of_global_hyperparameter_mutation
+                    ),
+                    config=deepneat_config,
+                ),
                 LayerHyperparameterMutation(
                     probability_of_application=(
                         deepneat_config.probability_of_layer_hyperparameter_mutation
@@ -185,6 +195,23 @@ class DeepNEATAlgorithm(NEATAlgorithm):
                     available_dense_unit_counts=deepneat_config.available_dense_unit_counts,
                     dropout_rate_min=deepneat_config.dropout_rate_min,
                     dropout_rate_max=deepneat_config.dropout_rate_max,
+                    initial_weight_scaling_min=(
+                        deepneat_config.initial_weight_scaling_min
+                    ),
+                    initial_weight_scaling_max=(
+                        deepneat_config.initial_weight_scaling_max
+                    ),
+                    available_batch_normalization_options=(
+                        deepneat_config.available_batch_normalization_options
+                    ),
+                    probability_of_new_conv_layer=(
+                        deepneat_config.probability_of_new_conv_layer
+                    ),
+                    gaussian_mutation_standard_deviation_fraction=(
+                        deepneat_config.gaussian_mutation_standard_deviation_fraction
+                    ),
+                    number_of_filters_min=deepneat_config.number_of_filters_min,
+                    number_of_filters_max=deepneat_config.number_of_filters_max,
                 ),
                 AddTensorEdgeMutation(
                     probability_of_application=(
@@ -201,6 +228,17 @@ class DeepNEATAlgorithm(NEATAlgorithm):
                     dropout_rate_min=deepneat_config.dropout_rate_min,
                     dropout_rate_max=deepneat_config.dropout_rate_max,
                     probability_of_new_conv_layer=deepneat_config.probability_of_new_conv_layer,
+                    initial_weight_scaling_min=(
+                        deepneat_config.initial_weight_scaling_min
+                    ),
+                    initial_weight_scaling_max=(
+                        deepneat_config.initial_weight_scaling_max
+                    ),
+                    available_batch_normalization_options=(
+                        deepneat_config.available_batch_normalization_options
+                    ),
+                    number_of_filters_min=deepneat_config.number_of_filters_min,
+                    number_of_filters_max=deepneat_config.number_of_filters_max,
                 ),
                 ToggleTensorEdgeMutation(
                     probability_of_application=(
@@ -224,7 +262,7 @@ class DeepNEATAlgorithm(NEATAlgorithm):
 
     @classmethod
     def _build_speciator(cls, config: NEATConfig) -> Speciator[NEATGenome]:
-        """Build the DeepNEAT speciator, whose c3 term compares layer hyperparameters."""
+        """Build NEAT-style speciation with an optional library-defined c3 term."""
         deepneat_config = cast("DeepNEATConfig", config)
         deepneat_speciator = DeepNEATSpeciator(
             coefficient_excess_c1=deepneat_config.compatibility_distance_coefficient_excess_c1,
@@ -242,6 +280,8 @@ class DeepNEATAlgorithm(NEATAlgorithm):
             available_dense_unit_counts=deepneat_config.available_dense_unit_counts,
             dropout_rate_min=deepneat_config.dropout_rate_min,
             dropout_rate_max=deepneat_config.dropout_rate_max,
+            initial_weight_scaling_min=deepneat_config.initial_weight_scaling_min,
+            initial_weight_scaling_max=deepneat_config.initial_weight_scaling_max,
         )
         return cast("Speciator[NEATGenome]", deepneat_speciator)
 
@@ -264,21 +304,19 @@ class DeepNEATAlgorithm(NEATAlgorithm):
         return cast("PhenotypeDecoder[NEATGenome]", deepneat_decoder)
 
     def create_initial_population(self, rng: Generator) -> Population:
-        """Build generation 0: the fixed input->output linear classifier.
+        """Build generation 0: minimal topology plus global hyperparameter genes.
 
-        Per spec decision #12, DeepNEAT does not diversify its starting
-        population - every genome is identical, and diversity comes entirely
-        from mutation across subsequent generations. This bypasses
+        Every genome starts with the same minimal topology but independently
+        sampled chromosome-wide hyperparameters. This bypasses
         ``initial_population_strategy``/``initial_population_factory``
         entirely; see the class docstring and ``from_config``.
 
         Args:
-            rng: Source of randomness for the strategy protocol; unused, since
-                the fixed linear classifier has nothing random to draw.
+            rng: Source of randomness for global hyperparameter initialization.
 
         Returns:
-            Generation-0 population of ``config.population_size`` identical
-            genomes.
+            Generation-0 population of ``config.population_size`` minimal
+            chromosomes.
         """
         deepneat_config = cast("DeepNEATConfig", self.config)
         return build_deepneat_initial_population(deepneat_config, self.innovation_tracker, rng)

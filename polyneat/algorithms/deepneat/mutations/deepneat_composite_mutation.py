@@ -18,10 +18,11 @@ class DeepNEATCompositeMutation:
 
     The pipeline wired by ``DeepNEATAlgorithm._build_mutation`` is:
 
-        1. LayerHyperparameterMutation
-        2. AddTensorEdgeMutation
-        3. AddLayerNodeMutation
-        4. ToggleTensorEdgeMutation
+        1. GlobalHyperparameterMutation
+        2. LayerHyperparameterMutation
+        3. AddTensorEdgeMutation
+        4. AddLayerNodeMutation
+        5. ToggleTensorEdgeMutation
 
     It mirrors the order of ``CompositeNEATMutation``: the parameter-level
     operator runs before the structural ones, so a freshly inserted layer keeps

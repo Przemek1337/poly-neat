@@ -1,21 +1,14 @@
-"""Speciation for DeepNEAT: compatibility distance plus a hyperparameter term.
+"""NEAT-style speciation for DeepNEAT chromosomes.
 
-DeepNEAT genomes are speciated the same way NEAT genomes are, but a node is a
-whole layer rather than a single neuron, so the third term of the distance
-formula compares layer hyperparameters instead of connection weights, and the
-excess/disjoint counts are taken over edges (tensor flows) rather than over
-connection genes.
+DeepNEAT's sources require speciation by chromosome similarity but do not give
+a DeepNEAT-specific distance equation. The source-backed part here is NEAT's
+excess/disjoint comparison over tensor edges and historical markings.
 
-The excess/disjoint structure of the distance formula follows the source paper's
-NEAT-derived scheme directly. The hyperparameter term H̄ does not: the source paper
-settles that a third term should compare layer hyperparameters, but not how. It gives
-no field-wise comparison rule and no normalization scheme, because it describes
-DeepNEAT at a level that does not go that far. The comparison and normalization used
-here — position in the sorted allowed-value set for ``filters``/``kernel_size``/
-``units``, min-max scaling for ``dropout_rate``, 0/1 for booleans, the mean over the
-fields applicable to the layer's type, 1.0 for two layers of different types, and 1.0
-when two genomes share no node — are this library's own reconstruction, filling a gap
-the paper leaves open.
+The optional hyperparameter term H̄ is a PolyNEAT extension, not a rule stated
+by Liang or Miikkulainen et al. It uses min-max scaling for numeric fields, 0/1
+for booleans, the mean over fields applicable to a layer type, and 1.0 for
+different layer types or genomes with no shared hidden node. Set its coefficient
+to zero for source-only behavior.
 
 References:
     Miikkulainen, R., Liang, J., Meyerson, E., Rawal, A., Fink, D., Francon, O., Raju, B.,
@@ -39,25 +32,21 @@ logger = get_logger(__name__)
 
 
 def _normalized_position_in_choices(value: int, choices: tuple[int, ...]) -> float:
-    """Map a value to [0, 1] by its position in the sorted allowed set.
-
-    Using the position rather than the raw value keeps the distance meaningful
-    when the search space is geometric: 16 and 32 filters are adjacent choices,
-    while 16 and 128 are three steps apart, which the raw difference would
-    exaggerate.
+    """Map a value between the smallest and largest configured values to [0, 1].
 
     Args:
         value: The value to place.
         choices: The allowed values.
 
     Returns:
-        0.0 for the smallest choice, 1.0 for the largest; 0.0 when there is only
-        one choice or the value is not among them.
+        0.0 for the smallest value and 1.0 for the largest, clipped at both
+        ends; 0.0 when there is only one configured value.
     """
     sorted_choices = sorted(choices)
-    if len(sorted_choices) < 2 or value not in sorted_choices:
+    if len(sorted_choices) < 2:
         return 0.0
-    return sorted_choices.index(value) / (len(sorted_choices) - 1)
+    minimum, maximum = sorted_choices[0], sorted_choices[-1]
+    return min(1.0, max(0.0, (value - minimum) / (maximum - minimum)))
 
 
 def compute_layer_hyperparameter_distance(
@@ -68,19 +57,18 @@ def compute_layer_hyperparameter_distance(
     available_dense_unit_counts: tuple[int, ...],
     dropout_rate_min: float,
     dropout_rate_max: float,
+    initial_weight_scaling_min: float = 0.0,
+    initial_weight_scaling_max: float = 2.0,
 ) -> float:
     """Return a normalized distance in [0, 1] between two layers.
 
     Layers of different types are maximally distant: a conv and a dense layer
     share no hyperparameters, so no field-wise comparison is meaningful.
     Otherwise the distance is the mean of the per-field absolute differences,
-    each normalized to [0, 1]; numeric fields with a discrete allowed set are
-    compared by position in that set rather than by raw value.
+    each normalized to [0, 1].
 
-    This comparison and its normalization are a reconstruction by this library,
-    not a rule taken from the source paper: the paper calls for a hyperparameter
-    term in the distance formula without specifying how two layers' hyperparameters
-    should be compared.
+    This comparison and its normalization are an optional reconstruction by
+    this library. The source does not prescribe a hyperparameter term.
 
     Args:
         first_node: One layer.
@@ -105,6 +93,20 @@ def compute_layer_hyperparameter_distance(
     if dropout_span > 0.0:
         per_field_differences.append(
             min(1.0, abs(first_node.dropout_rate - second_node.dropout_rate) / dropout_span)
+        )
+    initial_weight_scaling_span = (
+        initial_weight_scaling_max - initial_weight_scaling_min
+    )
+    if initial_weight_scaling_span > 0.0:
+        per_field_differences.append(
+            min(
+                1.0,
+                abs(
+                    first_node.initial_weight_scaling
+                    - second_node.initial_weight_scaling
+                )
+                / initial_weight_scaling_span,
+            )
         )
     per_field_differences.append(
         0.0 if first_node.uses_batch_normalization == second_node.uses_batch_normalization
@@ -163,13 +165,17 @@ def compute_compatibility_distance(
     available_dense_unit_counts: tuple[int, ...],
     dropout_rate_min: float,
     dropout_rate_max: float,
+    initial_weight_scaling_min: float = 0.0,
+    initial_weight_scaling_max: float = 2.0,
 ) -> float:
-    """Return delta = c1*E/N + c2*D/N + c3*H, DeepNEAT's compatibility distance.
+    """Return delta = c1*E/N + c2*D/N + c3*H.
 
     ``E`` and ``D`` count excess and disjoint **edges** aligned by innovation id,
     ``N`` normalizes by the larger genome's edge count (set to 1 below 20 edges,
     as in the NEAT paper), and ``H`` is the mean hyperparameter distance over the
-    layers the two genomes share by node id. Sharing no layer gives ``H = 1.0``.
+    hidden layers the two genomes share by node id. ``H`` is an optional
+    PolyNEAT extension, not a source-defined DeepNEAT term. If either genome has hidden
+    layers but none are shared, ``H = 1.0``; two minimal genomes have ``H = 0.0``.
 
     Args:
         first_genome: One genome.
@@ -213,14 +219,21 @@ def compute_compatibility_distance(
             available_dense_unit_counts=available_dense_unit_counts,
             dropout_rate_min=dropout_rate_min,
             dropout_rate_max=dropout_rate_max,
+            initial_weight_scaling_min=initial_weight_scaling_min,
+            initial_weight_scaling_max=initial_weight_scaling_max,
         )
         for first_node in first_genome.node_genes
-        if first_node.node_id in second_nodes_by_id
+        if first_node.layer_type not in ("input", "output")
+        and first_node.node_id in second_nodes_by_id
     ]
+    either_genome_has_hidden_layers = any(
+        node.layer_type not in ("input", "output")
+        for node in (*first_genome.node_genes, *second_genome.node_genes)
+    )
     mean_hyperparameter_distance = (
         sum(shared_layer_distances) / len(shared_layer_distances)
         if shared_layer_distances
-        else 1.0
+        else float(either_genome_has_hidden_layers)
     )
 
     return (
@@ -289,6 +302,8 @@ class DeepNEATSpeciator:
         available_dense_unit_counts: tuple[int, ...],
         dropout_rate_min: float,
         dropout_rate_max: float,
+        initial_weight_scaling_min: float = 0.0,
+        initial_weight_scaling_max: float = 2.0,
     ) -> None:
         self._coefficient_excess_c1 = coefficient_excess_c1
         self._coefficient_disjoint_c2 = coefficient_disjoint_c2
@@ -299,6 +314,8 @@ class DeepNEATSpeciator:
         self._available_dense_unit_counts = available_dense_unit_counts
         self._dropout_rate_min = dropout_rate_min
         self._dropout_rate_max = dropout_rate_max
+        self._initial_weight_scaling_min = initial_weight_scaling_min
+        self._initial_weight_scaling_max = initial_weight_scaling_max
         self._species_representatives_from_previous_generation: list[_SpeciesRepresentative] = []
         self._next_species_id: SpeciesId = 0
 
@@ -373,6 +390,8 @@ class DeepNEATSpeciator:
                 available_dense_unit_counts=self._available_dense_unit_counts,
                 dropout_rate_min=self._dropout_rate_min,
                 dropout_rate_max=self._dropout_rate_max,
+                initial_weight_scaling_min=self._initial_weight_scaling_min,
+                initial_weight_scaling_max=self._initial_weight_scaling_max,
             )
             if distance_to_representative < self._compatibility_distance_threshold:
                 representative.member_genome_count_in_current_generation += 1

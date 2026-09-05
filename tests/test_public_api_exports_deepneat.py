@@ -5,6 +5,7 @@ import polyneat as pn
 _EXPECTED_DEEPNEAT_EXPORTS = (
     "DeepNEATAlgorithm",
     "DeepNEATGenome",
+    "DeepNEATGlobalHyperparameters",
     "LayerNodeGene",
     "TensorEdgeGene",
     "InvalidDeepNEATGenomeError",
@@ -13,6 +14,7 @@ _EXPECTED_DEEPNEAT_EXPORTS = (
     "DeepNEATPhenotypeDecoder",
     "TorchLayerStackPhenotype",
     "DeepNEATCompositeMutation",
+    "GlobalHyperparameterMutation",
     "AddLayerNodeMutation",
     "AddTensorEdgeMutation",
     "ToggleTensorEdgeMutation",
@@ -36,6 +38,7 @@ def test_deepneat_algorithm_subpackage_reexports_its_classes() -> None:
     for export_name in (
         "DeepNEATAlgorithm",
         "DeepNEATGenome",
+        "DeepNEATGlobalHyperparameters",
         "LayerNodeGene",
         "TensorEdgeGene",
         "InvalidDeepNEATGenomeError",
@@ -44,6 +47,7 @@ def test_deepneat_algorithm_subpackage_reexports_its_classes() -> None:
         "DeepNEATPhenotypeDecoder",
         "TorchLayerStackPhenotype",
         "DeepNEATCompositeMutation",
+        "GlobalHyperparameterMutation",
         "AddLayerNodeMutation",
         "AddTensorEdgeMutation",
         "ToggleTensorEdgeMutation",

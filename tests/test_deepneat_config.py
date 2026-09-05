@@ -7,10 +7,13 @@ from polyneat.configs.deepneat.deepneat_config import DeepNEATConfig
 
 
 def test_defaults_validate() -> None:
-    DeepNEATConfig().validate()
+    config = DeepNEATConfig()
+    config.validate()
+    assert config.compatibility_distance_coefficient_weight_difference_c3 == 0.0
+    assert config.maximum_total_parameter_count is None
 
 
-def test_search_space_defaults_match_the_paper() -> None:
+def test_generic_search_space_defaults_are_valid() -> None:
     config = DeepNEATConfig()
     assert config.available_filter_counts == (16, 32, 64, 128)
     assert config.available_kernel_sizes == (1, 3, 5)
@@ -24,6 +27,7 @@ def test_search_space_defaults_match_the_paper() -> None:
         "probability_of_add_tensor_edge_mutation",
         "probability_of_toggle_tensor_edge_mutation",
         "probability_of_layer_hyperparameter_mutation",
+        "probability_of_global_hyperparameter_mutation",
     ],
 )
 def test_probabilities_outside_unit_interval_are_rejected(field_name: str) -> None:
@@ -56,6 +60,10 @@ def test_non_positive_parameter_budget_is_rejected() -> None:
     with pytest.raises(ConfigurationError) as raised:
         DeepNEATConfig(maximum_total_parameter_count=0)
     assert "maximum_total_parameter_count" in str(raised.value)
+
+
+def test_parameter_budget_can_be_disabled_for_source_only_runs() -> None:
+    assert DeepNEATConfig(maximum_total_parameter_count=None).maximum_total_parameter_count is None
 
 
 def test_input_geometry_must_be_positive() -> None:
@@ -95,3 +103,14 @@ def test_example_protocol_fields_are_validated(
 def test_unknown_yaml_key_is_rejected() -> None:
     with pytest.raises(ConfigurationError):
         DeepNEATConfig.from_dict({"not_a_real_field": 1})
+
+
+def test_global_search_ranges_and_crop_geometry_are_validated() -> None:
+    with pytest.raises(ConfigurationError):
+        DeepNEATConfig(global_learning_rate_min=0.0)
+    with pytest.raises(ConfigurationError):
+        DeepNEATConfig(global_momentum_max=1.0)
+    with pytest.raises(ConfigurationError):
+        DeepNEATConfig(global_cropped_image_size_max=29)
+    with pytest.raises(ConfigurationError):
+        DeepNEATConfig(number_of_filters_min=32, number_of_filters_max=None)

@@ -4,6 +4,7 @@ import torch
 
 from polyneat.algorithms.deepneat.deepneat_genome import (
     DeepNEATGenome,
+    DeepNEATGlobalHyperparameters,
     LayerNodeGene,
     TensorEdgeGene,
 )
@@ -20,7 +21,7 @@ def _edge(innovation_id: int, source: int, target: int, enabled: bool = True):
     )
 
 
-def _decoder(maximum_parameters: int = 20_000_000) -> DeepNEATPhenotypeDecoder:
+def _decoder(maximum_parameters: int | None = 20_000_000) -> DeepNEATPhenotypeDecoder:
     return DeepNEATPhenotypeDecoder(
         input_shape=TensorShape.spatial(channels=1, height=8, width=8),
         number_of_classes=10,
@@ -78,10 +79,14 @@ def test_skip_connection_merges_two_paths() -> None:
         edge_genes=(_edge(0, 0, 2), _edge(1, 2, 1), _edge(2, 0, 1)),
     )
     phenotype = _decoder().build_phenotype_from_genome(genome)
+    output_layer = phenotype._layer_modules_by_node_id["1"]
+    # The source requires the 8x8 shortcut to be max-pooled to the smallest
+    # parent output (4x4) before concatenation: (1 + 4) * 4 * 4 = 80.
+    assert output_layer.in_features == 80
     assert phenotype.forward_pass(torch.randn(3, 1, 8, 8)).shape == (3, 10)
 
 
-def test_conv_after_dense_is_coerced_and_still_runs() -> None:
+def test_conv_after_dense_is_degenerate_instead_of_being_coerced() -> None:
     genome = DeepNEATGenome(
         node_genes=(
             LayerNodeGene(node_id=0, layer_type="input"),
@@ -92,8 +97,8 @@ def test_conv_after_dense_is_coerced_and_still_runs() -> None:
         edge_genes=(_edge(0, 0, 2), _edge(1, 2, 3), _edge(2, 3, 1)),
     )
     phenotype = _decoder().build_phenotype_from_genome(genome)
-    assert not phenotype.is_degenerate
-    assert phenotype.forward_pass(torch.randn(2, 1, 8, 8)).shape == (2, 10)
+    assert phenotype.is_degenerate
+    assert phenotype.number_of_layer_modules == 0
 
 
 def test_genome_without_a_path_is_degenerate() -> None:
@@ -127,6 +132,13 @@ def test_exceeding_the_parameter_budget_makes_the_phenotype_degenerate() -> None
         _linear_classifier()
     )
     assert phenotype.is_degenerate
+
+
+def test_none_parameter_budget_does_not_add_a_source_unspecified_fitness_cutoff() -> None:
+    phenotype = _decoder(maximum_parameters=None).build_phenotype_from_genome(
+        _linear_classifier()
+    )
+    assert not phenotype.is_degenerate
 
 
 def test_parameter_count_is_reported() -> None:
@@ -204,3 +216,38 @@ def test_phenotype_is_an_nn_module_and_trainable() -> None:
 
 def test_reset_recurrent_state_is_a_no_op() -> None:
     _decoder().build_phenotype_from_genome(_linear_classifier()).reset_recurrent_state()
+
+
+def test_evolved_initial_weight_scaling_is_reapplied_after_reset() -> None:
+    genome = DeepNEATGenome(
+        node_genes=(
+            LayerNodeGene(node_id=0, layer_type="input"),
+            LayerNodeGene(node_id=1, layer_type="output"),
+            LayerNodeGene(
+                node_id=2,
+                layer_type="dense",
+                number_of_units=8,
+                initial_weight_scaling=0.0,
+            ),
+        ),
+        edge_genes=(_edge(0, 0, 2), _edge(1, 2, 1)),
+    )
+    phenotype = _decoder().build_phenotype_from_genome(genome)
+    phenotype.reinitialize_parameters()
+    hidden_linear = phenotype._layer_modules_by_node_id["2"][0]
+    assert torch.count_nonzero(hidden_linear.weight) == 0
+
+
+def test_evolved_crop_size_is_used_during_shape_propagation() -> None:
+    genome = DeepNEATGenome(
+        node_genes=(
+            LayerNodeGene(node_id=0, layer_type="input"),
+            LayerNodeGene(node_id=1, layer_type="output"),
+        ),
+        edge_genes=(_edge(0, 0, 1),),
+        global_hyperparameters=DeepNEATGlobalHyperparameters(cropped_image_size=6),
+    )
+    phenotype = _decoder().build_phenotype_from_genome(genome)
+    output_layer = phenotype._layer_modules_by_node_id["1"]
+    assert output_layer.in_features == 36
+    assert phenotype.forward_pass(torch.ones(2, 1, 6, 6)).shape == (2, 10)

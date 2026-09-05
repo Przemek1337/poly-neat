@@ -26,8 +26,8 @@ class DeepNEATPhenotypeDecoder:
         input_shape: Shape of the tensor a built phenotype's ``forward_pass``
             expects, excluding the batch dimension.
         number_of_classes: Width of every built phenotype's output layer.
-        maximum_total_parameter_count: Parameter budget passed through to
-            every built phenotype; see
+        maximum_total_parameter_count: Optional library safety budget passed
+            through to every built phenotype. ``None`` disables it; see
             :class:`~polyneat.algorithms.deepneat.torch_layer_stack_phenotype
             .TorchLayerStackPhenotype` for what exceeding it does.
         device_for_computation: Device every built phenotype is moved to.
@@ -42,7 +42,7 @@ class DeepNEATPhenotypeDecoder:
 
     input_shape: TensorShape
     number_of_classes: int
-    maximum_total_parameter_count: int
+    maximum_total_parameter_count: int | None
     device_for_computation: torch.device
 
     def build_phenotype_from_genome(self, genome: DeepNEATGenome) -> TorchLayerStackPhenotype:

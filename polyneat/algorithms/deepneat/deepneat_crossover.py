@@ -1,18 +1,14 @@
-"""Crossover for DeepNEAT genomes, aligned by innovation id.
-
-References:
-    Miikkulainen, R., et al. (2017). Evolving Deep Neural Networks. *arXiv:1703.00548*.
-        DOI: 10.1016/B978-0-12-815480-9.00015-3
-    Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks through Augmenting
-        Topologies. *Evolutionary Computation*, 10(2), 99-127. (Gene alignment: section 3.2.)
-"""
+"""Innovation-aligned crossover for DeepNEAT chromosomes."""
 
 from __future__ import annotations
+
+from dataclasses import fields
 
 from numpy.random import Generator
 
 from polyneat.algorithms.deepneat.deepneat_genome import (
     DeepNEATGenome,
+    DeepNEATGlobalHyperparameters,
     LayerNodeGene,
     TensorEdgeGene,
 )
@@ -23,37 +19,18 @@ logger = get_logger(__name__)
 
 
 class DeepNEATCrossover:
-    """Combines two architectures by aligning their edges on innovation id.
-
-    Edges follow NEAT's rule: matching genes are drawn from either parent,
-    disjoint and excess genes come from the fitter parent only. Layer nodes are
-    inherited as a consequence - the child holds every node its inherited edges
-    reference, plus the input and output layers.
-
-    A node present in both parents takes its hyperparameters from one randomly
-    chosen parent **as a whole**, never field by field. Mixing fields could
-    produce values outside the configured search space, and averaging them would
-    invent values the sampler can never draw.
-
-    References:
-        Miikkulainen, R., et al. (2017). Evolving Deep Neural Networks.
-            *arXiv:1703.00548*. (Gene alignment and mating: Figure 4.)
-        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks through
-            Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
-    """
+    """Cross layer chromosomes using NEAT's historical markings."""
 
     def __init__(
         self,
         probability_of_inheriting_from_fitter_parent_for_matching_genes: float,
+        probability_of_child_gene_remaining_disabled_when_either_parent_disabled: float = 0.75,
     ) -> None:
-        """Store the inheritance bias for matching genes.
-
-        Args:
-            probability_of_inheriting_from_fitter_parent_for_matching_genes:
-                Chance a matching gene is taken from the fitter parent.
-        """
         self._probability_of_inheriting_from_fitter_parent = (
             probability_of_inheriting_from_fitter_parent_for_matching_genes
+        )
+        self._probability_of_child_gene_remaining_disabled = (
+            probability_of_child_gene_remaining_disabled_when_either_parent_disabled
         )
 
     def apply_to_parents(
@@ -61,80 +38,98 @@ class DeepNEATCrossover:
         fitter_parent: DeepNEATGenome,
         less_fit_parent: DeepNEATGenome,
         rng: Generator,
+        *,
+        parents_have_equal_fitness: bool = False,
     ) -> DeepNEATGenome:
-        """Return the offspring of two architectures.
-
-        Args:
-            fitter_parent: The parent with the higher fitness; supplies every
-                disjoint and excess gene.
-            less_fit_parent: The other parent; contributes only matching genes.
-            rng: Source of randomness for the per-gene inheritance choices.
-
-        Returns:
-            A valid, acyclic child genome.
-
-        References:
-            Miikkulainen, R., et al. (2017). Evolving Deep Neural Networks.
-                *arXiv:1703.00548*. (Mating scheme: Figure 4.)
-        """
-        less_fit_edges_by_innovation_id = {
-            edge.innovation_id: edge for edge in less_fit_parent.edge_genes
-        }
-
+        """Return an acyclic child, handling equal-fitness parents symmetrically."""
+        fitter_edges = {edge.innovation_id: edge for edge in fitter_parent.edge_genes}
+        other_edges = {edge.innovation_id: edge for edge in less_fit_parent.edge_genes}
         inherited_edges: list[TensorEdgeGene] = []
-        for fitter_edge in fitter_parent.edge_genes:
-            matching_edge = less_fit_edges_by_innovation_id.get(fitter_edge.innovation_id)
-            if matching_edge is None:
-                inherited_edges.append(fitter_edge)
+
+        for innovation_id in sorted(fitter_edges.keys() | other_edges.keys()):
+            fitter_edge = fitter_edges.get(innovation_id)
+            other_edge = other_edges.get(innovation_id)
+            if fitter_edge is None or other_edge is None:
+                unique_edge = fitter_edge or other_edge
+                if unique_edge is None:
+                    continue
+                if fitter_edge is None and not parents_have_equal_fitness:
+                    continue
+                if parents_have_equal_fitness and rng.random() >= 0.5:
+                    continue
+                inherited_edges.append(unique_edge)
                 continue
+
             take_from_fitter = (
                 rng.random() < self._probability_of_inheriting_from_fitter_parent
             )
-            inherited_edges.append(fitter_edge if take_from_fitter else matching_edge)
+            chosen_edge = fitter_edge if take_from_fitter else other_edge
+            if not fitter_edge.is_enabled or not other_edge.is_enabled:
+                chosen_edge = TensorEdgeGene(
+                    innovation_id=chosen_edge.innovation_id,
+                    source_node_id=chosen_edge.source_node_id,
+                    target_node_id=chosen_edge.target_node_id,
+                    is_enabled=not (
+                        rng.random()
+                        < self._probability_of_child_gene_remaining_disabled
+                    ),
+                )
+            inherited_edges.append(chosen_edge)
 
         inherited_edges = self._drop_edges_closing_a_cycle(inherited_edges)
-
-        less_fit_nodes_by_id = {node.node_id: node for node in less_fit_parent.node_genes}
+        fitter_nodes = {node.node_id: node for node in fitter_parent.node_genes}
+        other_nodes = {node.node_id: node for node in less_fit_parent.node_genes}
         required_node_ids = {fitter_parent.input_node_id, fitter_parent.output_node_id}
         for edge in inherited_edges:
-            required_node_ids.add(edge.source_node_id)
-            required_node_ids.add(edge.target_node_id)
+            required_node_ids.update((edge.source_node_id, edge.target_node_id))
 
         inherited_nodes: list[LayerNodeGene] = []
-        for fitter_node in fitter_parent.node_genes:
-            if fitter_node.node_id not in required_node_ids:
-                continue
-            matching_node = less_fit_nodes_by_id.get(fitter_node.node_id)
-            if matching_node is None or matching_node.layer_type != fitter_node.layer_type:
-                inherited_nodes.append(fitter_node)
-                continue
-            take_from_fitter = (
-                rng.random() < self._probability_of_inheriting_from_fitter_parent
-            )
-            inherited_nodes.append(fitter_node if take_from_fitter else matching_node)
+        for node_id in sorted(required_node_ids):
+            fitter_node = fitter_nodes.get(node_id)
+            other_node = other_nodes.get(node_id)
+            if fitter_node is None:
+                chosen_node = other_node
+            elif other_node is None or other_node.layer_type != fitter_node.layer_type:
+                chosen_node = fitter_node
+            else:
+                chosen_node = (
+                    fitter_node
+                    if rng.random() < self._probability_of_inheriting_from_fitter_parent
+                    else other_node
+                )
+            if chosen_node is not None:
+                inherited_nodes.append(chosen_node)
 
         return DeepNEATGenome(
             node_genes=tuple(inherited_nodes),
             edge_genes=tuple(inherited_edges),
+            global_hyperparameters=self._cross_global_hyperparameters(
+                fitter_parent.global_hyperparameters,
+                less_fit_parent.global_hyperparameters,
+                rng,
+            ),
         )
+
+    def _cross_global_hyperparameters(
+        self,
+        fitter: DeepNEATGlobalHyperparameters,
+        other: DeepNEATGlobalHyperparameters,
+        rng: Generator,
+    ) -> DeepNEATGlobalHyperparameters:
+        values = {
+            descriptor.name: (
+                getattr(fitter, descriptor.name)
+                if rng.random() < self._probability_of_inheriting_from_fitter_parent
+                else getattr(other, descriptor.name)
+            )
+            for descriptor in fields(DeepNEATGlobalHyperparameters)
+        }
+        return DeepNEATGlobalHyperparameters(**values)
 
     @staticmethod
     def _drop_edges_closing_a_cycle(
         candidate_edges: list[TensorEdgeGene],
     ) -> list[TensorEdgeGene]:
-        """Disable enabled edges that would make the child cyclic.
-
-        Both parents are acyclic, but the child's *combination* of enable bits
-        need not be: an edge disabled in the fitter parent may arrive enabled
-        from the other one and close a loop. Edges are considered in innovation
-        order, so the resolution is deterministic given the inheritance draws.
-
-        Args:
-            candidate_edges: The edges inherited so far.
-
-        Returns:
-            The same edges, with cycle-closing ones switched off.
-        """
         accepted_enabled_edges: list[tuple[int, int]] = []
         resolved_edges: list[TensorEdgeGene] = []
         for edge in sorted(candidate_edges, key=lambda gene: gene.innovation_id):
