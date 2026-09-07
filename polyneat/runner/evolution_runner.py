@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from dataclasses import dataclass
@@ -26,8 +27,21 @@ TerminationReason = Literal[
     "max_generations_reached",
     "target_fitness_reached",
     "stagnation_limit_reached",
+    "budget_exhausted",
     "manually_stopped",
 ]
+
+
+class NoSuccessfulEvaluationError(RuntimeError):
+    """Raised when a run finished without a single candidate that could be scored.
+
+    A budgeted search can legitimately end with nothing usable: every candidate
+    ran out of memory, produced a non-finite loss, or was cut off by the
+    deadline. That outcome is a failed run and has to be reported as one. The
+    alternative - returning whichever genome held the least-negative sentinel -
+    would put a model that was never successfully evaluated into a results
+    table.
+    """
 
 
 @dataclass(frozen=True)
@@ -135,7 +149,11 @@ class EvolutionRunner:
             generation_best_genome = current_population.genomes[
                 current_fitnesses.index(generation_best_fitness)
             ]
-            is_new_all_time_best = (
+            # A generation in which every candidate failed reports a non-finite
+            # best. Such a genome was never successfully evaluated, so it must
+            # not become the run's best; algorithms that always return finite
+            # fitnesses are unaffected by this guard.
+            is_new_all_time_best = math.isfinite(generation_best_fitness) and (
                 run_context.current_best_fitness is None
                 or generation_best_fitness > run_context.current_best_fitness
             )
@@ -170,8 +188,12 @@ class EvolutionRunner:
 
         total_runtime_seconds = time.perf_counter() - wall_clock_start_time
 
-        assert run_context.current_best_genome is not None
-        assert run_context.current_best_fitness is not None
+        if run_context.current_best_genome is None or run_context.current_best_fitness is None:
+            raise NoSuccessfulEvaluationError(
+                f"run {run_id} finished after {len(run_context.history_of_generation_statistics)} "
+                "generations without a single successfully evaluated candidate; this is a failed "
+                "run, not a run whose best model happens to score badly"
+            )
 
         evolution_result = EvolutionResult(
             final_population=current_population,

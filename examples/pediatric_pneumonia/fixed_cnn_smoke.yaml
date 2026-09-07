@@ -1,0 +1,45 @@
+# Smoke profile: the hand-designed CNN baseline on the synthetic archive.
+#
+# A plumbing check, not a measurement. 64 pixels, a few epochs, CPU, synthetic
+# images. Nothing produced by this profile belongs in a results table.
+protocol:
+  protocol_id: pediatric-pneumonia-smoke-synthetic-v1
+  dataset_release: synthetic/pediatric-pneumonia-smoke
+  dataset_license: not-applicable-synthetic-fixture
+  image_side: 64
+  split_seed: 11
+  search_seed: 101
+  retraining_seeds: [201]
+  bootstrap_seed: 13
+  inference_batch_size: 16
+  maximum_phenotype_parameters: 2000000
+  uses_augmentation: true
+
+architecture:
+  convolution_channels: [8, 16]
+  kernel_size: 3
+  uses_batch_normalization: true
+  dropout_probability: 0.1
+
+candidate_recipe:
+  learning_rate: 0.02
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 16
+  number_of_epochs: 3
+  schedule: cosine
+  minimum_learning_rate: 0.001
+
+track_b_recipe:
+  learning_rate: 0.02
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 16
+  number_of_epochs: 3
+  schedule: cosine
+  minimum_learning_rate: 0.001
+
+bootstrap:
+  number_of_replicates: 50
+  maximum_attempts: 500
+  confidence_level: 0.95

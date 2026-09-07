@@ -1,0 +1,81 @@
+# Template for the protocol lock a full result series must run under.
+#
+# This file does NOT validate as-is, on purpose. Every TODO below is a decision
+# that has to be made and frozen *before* the first result seed starts, and
+# validate_protocol_lock_for_full_run rejects a lock that still contains one.
+# Copy it next to the manifest of the series, fill in every value, and keep it
+# beside the artifacts it describes.
+#
+# Filling this in requires the pilot to have finished: the budgets, the
+# candidate limits, the shared track B recipe and the random-search prior are
+# pilot outputs, not guesses. Changing the lock after test predictions exist
+# starts a new study and does not amend the original series.
+schema_version: "1.0"
+
+data:
+  protocol_id: TODO                 # new id whenever the manifest changes
+  manifest_path: manifest.json
+  manifest_sha256: TODO             # digest of the manifest this lock is frozen for
+  dataset_release: TODO             # the Kaggle release actually downloaded
+  dataset_license: TODO             # as stated by that release's publisher
+  image_side: 128
+
+seeds:
+  split_seed: TODO
+  smoke_sampling_seed: TODO
+  bootstrap_seed: TODO
+  search_seeds: TODO                # 5 by default; declare 10 before the series if used
+  retraining_seeds: TODO            # 3 track B seeds per selected topology
+  seed_derivation_rule: >-
+    stream_seed = sha256("polyneat|<role>|<root_seed>|<track>|<evaluation_id>") mod 2**63
+
+budget:
+  search_wall_clock_seconds: TODO   # active time on one exclusive device
+  pilot_wall_clock_seconds: TODO
+  maximum_candidate_seconds: TODO
+  maximum_phenotype_parameters: TODO
+  checkpoint_interval_seconds: TODO
+
+search:
+  methods: [deepneat, exact, random_search_deepneat, fixed_cnn]
+  population_size: TODO
+  candidate_training_epochs: TODO
+  candidate_batch_size: TODO
+  fitness_metric: auroc_on_search_validation
+
+random_search:
+  graph_size_distribution: TODO     # the stated prior, frozen in the pilot
+  gene_distributions: TODO
+
+fixed_cnn:
+  architecture: TODO                # frozen before the series; tuning it is a reported cost
+  training_epochs: TODO
+
+track_b_recipe:
+  optimizer: sgd
+  learning_rate: TODO
+  momentum: TODO
+  weight_decay: TODO
+  batch_size: TODO
+  training_epochs: TODO
+  learning_rate_schedule: cosine
+  parameter_initialization: kaiming_normal_rectifier_gain
+
+transfer_learning:
+  weights_identifier: torchvision/resnet18/IMAGENET1K_V1
+  weights_sha256: TODO              # digest of the downloaded checkpoint file
+  unfreezing_policy: TODO
+  training_epochs: TODO
+  preprocessing: gray_repeated_to_three_channels_imagenet_normalization
+
+metrics:
+  bootstrap_replicates: 2000
+  maximum_bootstrap_attempts: 20000
+  confidence_level: 0.95
+  threshold_rule: youden_j_on_threshold_validation
+  reference_threshold: 0.5
+
+environment:
+  device: TODO                      # the one exclusive device model the budget assumes
+  precision: float32
+  deterministic_algorithms: TODO

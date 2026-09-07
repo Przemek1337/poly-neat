@@ -20,6 +20,22 @@ dependencies = [
 gymnasium = ["gymnasium>=0.29"]
 dev = ["ruff>=0.4"]
 
+# Image decoding and reference metric implementations, needed by the image
+# benchmarks (pediatric pneumonia) and not by the core library. Versions are
+# pinned rather than bounded: AUROC and average precision come from
+# scikit-learn, and a metric implementation that changes under a result series
+# would make its numbers incomparable. Every run also records the version it
+# actually imported, so the pin is checkable from the artifacts alone.
+benchmark = [
+    "scikit-learn==1.9.0",
+    "pillow==12.3.0",
+    # torchvision ships compiled operators against one torch ABI. Installing it
+    # unpinned pulls a newer torch alongside it and every torchvision call then
+    # fails with "operator torchvision::nms does not exist", so the pair is
+    # pinned together: 0.27.x matches torch 2.12.x.
+    "torchvision==0.27.1",
+]
+
 # PyTorch z CUDA pobierany jest z indeksu PyTorcha, nie z PyPI: domyślne koło `torch`
 # z PyPI jest zbudowane bez CUDA, przez co `torch.cuda.is_available()` zwraca False
 # i ścieżka `--gpu` kończy się błędem.
@@ -62,7 +78,33 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+# Static type checking is scoped to the packages added for the image
+# benchmarks. The rest of the repository predates it and is not retyped here:
+# the point is that new and changed interfaces are checked, not that unrelated
+# modules get rebuilt. Ruff and annotations alone do not perform this check.
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+files = [
+    "polyneat/training",
+    "polyneat/evaluators/binary_predictions.py",
+    "polyneat/evaluators/binary_classification_metrics.py",
+    "polyneat/evaluators/binary_inference.py",
+    "polyneat/evaluators/binary_auroc_evaluator.py",
+    "polyneat/evaluators/decision_threshold.py",
+    "polyneat/evaluators/bootstrap_confidence_intervals.py",
+    "polyneat/runner/evaluation_record.py",
+    "polyneat/runner/run_checkpoint.py",
+    "polyneat/runner/wall_clock_budget.py",
+    "polyneat/nn/fixed_convolutional_network.py",
+    "polyneat/nn/pretrained_image_classifier.py",
+    "polyneat/algorithms/exact/exact_parameter_reset.py",
+    "polyneat/algorithms/exact/exact_image_input_adapter.py",
+    "examples/pediatric_pneumonia",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "mypy>=1.11",
 ]

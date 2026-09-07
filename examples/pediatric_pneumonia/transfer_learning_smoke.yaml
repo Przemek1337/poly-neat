@@ -1,0 +1,52 @@
+# Smoke profile: pretrained ResNet-18, reported separately from the search
+# comparison.
+#
+# Two things make this baseline non-comparable with the others by construction,
+# and both are recorded rather than argued about: the cost of the ImageNet
+# pretraining is counted nowhere, and the model brings its own normalization,
+# so the shared preprocessing is set to identity standardization instead of
+# fitting statistics on the X-rays.
+#
+# There is no track B. Retraining this topology from scratch would delete the
+# pretrained features that are its entire point, so retraining_seeds is empty.
+protocol:
+  protocol_id: pediatric-pneumonia-smoke-synthetic-v1
+  dataset_release: synthetic/pediatric-pneumonia-smoke
+  dataset_license: not-applicable-synthetic-fixture
+  image_side: 64
+  split_seed: 11
+  search_seed: 101
+  retraining_seeds: []
+  bootstrap_seed: 13
+  inference_batch_size: 8
+  maximum_phenotype_parameters: null
+  uses_augmentation: true
+  uses_identity_standardization: true
+
+transfer_learning:
+  weights_identifier: torchvision/resnet18/IMAGENET1K_V1
+  unfreezing_policy: head_only
+  uses_imagenet_normalization: true
+
+candidate_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+  batch_size: 8
+  number_of_epochs: 1
+  schedule: constant
+  minimum_learning_rate: 0.0001
+
+track_b_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+  batch_size: 8
+  number_of_epochs: 1
+  schedule: constant
+  minimum_learning_rate: 0.0001
+
+bootstrap:
+  number_of_replicates: 30
+  maximum_attempts: 300
+  confidence_level: 0.95

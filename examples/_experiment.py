@@ -9,7 +9,7 @@ harness sees it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -18,11 +18,44 @@ import torch
 
 @dataclass(frozen=True)
 class ExperimentReport:
-    """What one full example run produced, as the benchmark harness sees it."""
+    """What one full example run produced, as the benchmark harness sees it.
+
+    The first three fields are the original contract and are unchanged. The
+    rest were added for benchmarks that have to be reproducible from their own
+    artifacts, and all of them default, so every existing example and every
+    existing caller keeps working without knowing they exist.
+
+    Attributes:
+        metric_values: Scalar metrics of the run.
+        number_of_generations: Generations the run completed.
+        runtime_seconds: Wall-clock duration.
+        status: ``succeeded`` or a failure label. A run that produced no
+            usable model reports its failure here instead of returning
+            plausible-looking metrics.
+        failure_reason: Why the run failed, when it did.
+        effective_configuration: The configuration after command-line and
+            programmatic overrides were applied. The source yaml alone does not
+            describe a run that overrode part of it.
+        artifact_paths: Named paths this run wrote, so a result file points at
+            its own checkpoints, predictions and manifest.
+        undefined_metrics: Metrics that have no value, and why. A metric with a
+            zero denominator is absent with a reason rather than reported as
+            zero.
+    """
 
     metric_values: dict[str, float]
     number_of_generations: int
     runtime_seconds: float
+    status: str = "succeeded"
+    failure_reason: str | None = None
+    effective_configuration: dict = field(default_factory=dict)
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    undefined_metrics: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def succeeded(self) -> bool:
+        """Whether this run produced a usable model."""
+        return self.status == "succeeded"
 
 
 def print_experiment_report(report: ExperimentReport) -> None:
@@ -44,6 +77,15 @@ EXAMPLE_REGISTRY: dict[str, str] = {
     "mnist/exact": "examples.mnist.exact",
     "mnist/hyperneat": "examples.mnist.hyperneat",
     "mnist/neat": "examples.mnist.neat",
+    "pediatric_pneumonia/deepneat_smoke": "examples.pediatric_pneumonia.deepneat_smoke",
+    "pediatric_pneumonia/exact_smoke": "examples.pediatric_pneumonia.exact_smoke",
+    "pediatric_pneumonia/fixed_cnn_smoke": "examples.pediatric_pneumonia.fixed_cnn_smoke",
+    "pediatric_pneumonia/random_search_smoke": (
+        "examples.pediatric_pneumonia.random_search_smoke"
+    ),
+    "pediatric_pneumonia/transfer_learning_smoke": (
+        "examples.pediatric_pneumonia.transfer_learning_smoke"
+    ),
     "retina/hyperneat": "examples.retina.hyperneat",
     "retina/leo": "examples.retina.leo",
     "visual_discrimination/hyperneat": "examples.visual_discrimination.hyperneat",

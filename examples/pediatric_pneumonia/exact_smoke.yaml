@@ -1,0 +1,83 @@
+# Smoke profile: EXACT on the synthetic pediatric pneumonia archive.
+#
+# A plumbing check at 64 pixels on the CPU, not a measurement. EXACT is
+# Lamarckian: it trains between generations and writes the trained kernels back
+# into the genotype, so its evaluator only scores. The version used here runs
+# generationally, unlike the distributed volunteer-computing loop of the source
+# paper, and the report has to say so.
+protocol:
+  protocol_id: pediatric-pneumonia-smoke-synthetic-v1
+  dataset_release: synthetic/pediatric-pneumonia-smoke
+  dataset_license: not-applicable-synthetic-fixture
+  image_side: 64
+  split_seed: 11
+  search_seed: 101
+  retraining_seeds: [201]
+  bootstrap_seed: 13
+  inference_batch_size: 16
+  maximum_phenotype_parameters: 2000000
+  uses_augmentation: true
+
+search:
+  number_of_generations: 2
+
+algorithm:
+  population_size: 4
+  number_of_input_nodes: 1
+  number_of_output_nodes: 2
+  random_seed: 101
+  device_for_phenotype_evaluation: cpu
+
+  input_image_height: 64
+  input_image_width: 64
+
+  initial_population_strategy: exact_minimal_cnn
+  number_of_mutations_per_genome: 2
+  probability_of_crossover_vs_mutation_only: 0.2
+  more_fit_parent_edge_inclusion_rate: 0.8
+  less_fit_parent_edge_inclusion_rate: 0.4
+  tournament_size_for_parent_selection: 1
+  use_epigenetic_weight_initialization: true
+  use_simplex_hyperparameter_optimization: false
+
+  number_of_training_epochs_per_genome: 2
+  training_batch_size: 16
+  velocity_reset_interval: 1000
+  input_dropout_probability: 0.0
+  hidden_dropout_probability: 0.0
+  use_batch_normalization: true
+  batch_normalization_alpha: 0.1
+  backpropagation_learning_rate: 0.0025
+  learning_rate_decay_factor: 0.95
+  minimum_learning_rate: 0.00001
+  backpropagation_momentum: 0.5
+  momentum_decay_factor: 0.95
+  maximum_momentum: 0.99
+  backpropagation_weight_decay: 0.0005
+  weight_decay_decay_factor: 0.95
+  minimum_weight_decay: 0.000001
+
+# Track A uses EXACT's own learning mechanism; this recipe is what the shared
+# trainer would apply and is recorded for comparability of the reported cost.
+candidate_recipe:
+  learning_rate: 0.0025
+  momentum: 0.5
+  weight_decay: 0.0005
+  batch_size: 16
+  number_of_epochs: 2
+  schedule: constant
+  minimum_learning_rate: 0.00001
+
+track_b_recipe:
+  learning_rate: 0.02
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 16
+  number_of_epochs: 3
+  schedule: cosine
+  minimum_learning_rate: 0.001
+
+bootstrap:
+  number_of_replicates: 50
+  maximum_attempts: 500
+  confidence_level: 0.95

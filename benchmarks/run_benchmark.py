@@ -6,11 +6,14 @@ Invoke as a module from the repository root (script invocation would put
     uv run python -m benchmarks.run_benchmark iris/cneat --repeats 5 [--cpu | --gpu] [--base-seed 0]
 
 Each repeat calls the example's ``run_experiment`` with evolution seed
-``base_seed + i`` and no artifacts directory. One JSON document per
-invocation lands in ``benchmarks/results/`` recording every run, the
-mean/std summary, and the full yaml config that produced it - after "edit
-the yaml, re-run, compare" the old yaml is gone, so the result file itself
-must record what produced it.
+``base_seed + i``. Artifacts are skipped unless ``--artifacts-root`` is given,
+in which case every seed writes into its own directory underneath it - which is
+what a benchmark that must be reproducible from its own output needs, and what
+the shared-directory default could not provide. One JSON document per
+invocation lands in ``benchmarks/results/`` recording every run, its status and
+artifact paths, the mean/std summary, the fraction of runs that failed, and the
+full yaml config that produced it - after "edit the yaml, re-run, compare" the
+old yaml is gone, so the result file itself must record what produced it.
 """
 
 from __future__ import annotations
@@ -46,8 +49,38 @@ def _parse_arguments(argument_list: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--base-seed", type=int, default=0, help="evolution seed of the first run (default: 0)"
     )
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=None,
+        help=(
+            "write each repeat into its own directory under this root "
+            "(<root>/<example>/seed_<n>). Omitted by default, which keeps the "
+            "historical behaviour of running without artifacts; benchmarks that must be "
+            "reproducible from their own output pass it."
+        ),
+    )
     add_device_arguments(parser)
     return parser.parse_args(argument_list)
+
+
+def _artifacts_directory_for_seed(
+    artifacts_root: Path | None, example_id: str, evolution_seed: int
+) -> Path | None:
+    """Give one repeat its own directory, or keep the historical no-artifacts run.
+
+    Every seed writing into the same directory is why artifacts used to be
+    skipped here at all: five runs would overwrite one another. A directory per
+    seed removes that objection, so a benchmark that has to be reproducible
+    from its own output can ask for one.
+    """
+    if artifacts_root is None:
+        return None
+    seed_directory = (
+        artifacts_root / example_id.replace("/", "_") / f"seed_{evolution_seed}"
+    )
+    seed_directory.mkdir(parents=True, exist_ok=True)
+    return seed_directory
 
 
 def _summarize_runs(run_records: list[dict]) -> dict[str, dict[str, float]]:
@@ -92,14 +125,27 @@ def main(argument_list: list[str] | None = None) -> None:
             f"\n=== Run {repeat_index + 1}/{arguments.repeats} "
             f"(evolution seed {evolution_seed}) ==="
         )
+        seed_artifacts_directory = _artifacts_directory_for_seed(
+            arguments.artifacts_root, arguments.example_id, evolution_seed
+        )
         report = example_module.run_experiment(
-            device=device, random_seed=evolution_seed, artifacts_directory=None
+            device=device,
+            random_seed=evolution_seed,
+            artifacts_directory=seed_artifacts_directory,
         )
         run_record = {
             "seed": evolution_seed,
             "metric_values": dict(report.metric_values),
             "number_of_generations": report.number_of_generations,
             "runtime_seconds": report.runtime_seconds,
+            "status": getattr(report, "status", "succeeded"),
+            "failure_reason": getattr(report, "failure_reason", None),
+            "artifacts_directory": (
+                None if seed_artifacts_directory is None else seed_artifacts_directory.as_posix()
+            ),
+            "artifact_paths": dict(getattr(report, "artifact_paths", {})),
+            "undefined_metrics": dict(getattr(report, "undefined_metrics", {})),
+            "effective_configuration": dict(getattr(report, "effective_configuration", {})),
         }
         run_records.append(run_record)
         print(f"Run result: {json.dumps(run_record)}")
@@ -120,6 +166,15 @@ def main(argument_list: list[str] | None = None) -> None:
         "base_seed": arguments.base_seed,
         "runs": run_records,
         "summary": summary,
+        "failed_run_count": sum(
+            1 for run in run_records if run.get("status", "succeeded") != "succeeded"
+        ),
+        "failed_run_fraction": (
+            sum(1 for run in run_records if run.get("status", "succeeded") != "succeeded")
+            / len(run_records)
+            if run_records
+            else 0.0
+        ),
     }
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
