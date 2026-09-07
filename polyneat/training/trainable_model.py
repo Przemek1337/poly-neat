@@ -46,3 +46,28 @@ class TrainableModel(Protocol):
     def load_state_dict(self, state: dict) -> object:
         """Restore parameters and buffers saved by :meth:`state_dict`."""
         ...
+
+
+def move_model_to_device(model: TrainableModel, device: torch.device) -> TrainableModel:
+    """Put ``model`` on ``device`` when it is a module that can be moved.
+
+    The protocol above deliberately does not promise ``.to()``: a PolyNEAT
+    phenotype is built for a device by its decoder and owns that placement
+    already. A plain ``nn.Module`` handed in by a baseline or rebuilt for a
+    retraining track has no such decoder, so it arrives wherever it was
+    constructed - the CPU - and would meet batches on another device.
+
+    Moving here rather than at every construction site keeps the rule in one
+    place: whatever runs a forward pass puts the model where the batches are.
+
+    Args:
+        model: Model about to be trained or scored.
+        device: Device its batches will live on.
+
+    Returns:
+        The same model, on ``device`` when it was movable. Models that manage
+        their own placement are returned untouched.
+    """
+    if isinstance(model, torch.nn.Module):
+        return model.to(device)
+    return model

@@ -16,7 +16,7 @@ import torch
 
 from polyneat.evaluators.binary_predictions import BinaryPredictions, build_binary_predictions
 from polyneat.training.image_preprocessing import ImagePreprocessor
-from polyneat.training.trainable_model import TrainableModel
+from polyneat.training.trainable_model import TrainableModel, move_model_to_device
 
 
 def predict_binary_logits(
@@ -30,7 +30,8 @@ def predict_binary_logits(
     """Run one model over ``images`` in evaluation mode and return raw logits.
 
     Args:
-        model: Frozen model. Switched to evaluation mode and left there.
+        model: Frozen model. Moved onto ``device_for_computation``, switched to
+            evaluation mode and left there.
         images: ``NCHW`` batch, unpreprocessed.
         preprocessor: The model's own fitted preprocessing. It is applied with
             ``training=False``, so no augmentation runs and nothing is fitted.
@@ -49,6 +50,7 @@ def predict_binary_logits(
     if number_of_rows == 0:
         raise ValueError("cannot run inference on an empty batch")
 
+    model = move_model_to_device(model, device_for_computation)
     model.eval()
     collected_logits: list[torch.Tensor] = []
     with torch.no_grad():

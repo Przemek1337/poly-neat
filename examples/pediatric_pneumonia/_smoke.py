@@ -75,6 +75,7 @@ def load_smoke_settings(
     *,
     data_directory: Path | None = None,
     random_seed: int | None = None,
+    device: torch.device | None = None,
 ) -> BenchmarkSettings:
     """Read one smoke profile yaml into :class:`BenchmarkSettings`.
 
@@ -83,6 +84,8 @@ def load_smoke_settings(
         data_directory: Override for the archive location.
         random_seed: Override for the search seed, used by the benchmark
             harness to run several seeds of the same profile.
+        device: Device the run happens on, from ``--cpu``/``--gpu``. ``None``
+            keeps the CPU these profiles are written for.
 
     Returns:
         The settings this run will actually use, which is what gets recorded as
@@ -114,6 +117,7 @@ def load_smoke_settings(
         ),
         maximum_phenotype_parameters=protocol_payload.get("maximum_phenotype_parameters"),
         search_budget_seconds=protocol_payload.get("search_budget_seconds"),
+        device_for_computation=torch.device("cpu") if device is None else device,
         uses_augmentation=bool(protocol_payload.get("uses_augmentation", True)),
         uses_identity_standardization=bool(
             protocol_payload.get("uses_identity_standardization", False)
@@ -153,7 +157,10 @@ def run_smoke_experiment(
             device,
         )
     settings = load_smoke_settings(
-        config_file_path, data_directory=data_directory, random_seed=random_seed
+        config_file_path,
+        data_directory=data_directory,
+        random_seed=random_seed,
+        device=device,
     )
     return run_pneumonia_protocol(
         settings,

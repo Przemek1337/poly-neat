@@ -29,7 +29,7 @@ from torch import nn
 
 from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.training.image_preprocessing import ImagePreprocessor
-from polyneat.training.trainable_model import TrainableModel
+from polyneat.training.trainable_model import TrainableModel, move_model_to_device
 from polyneat.training.training_recipe import TrainingRecipe
 
 logger = get_logger(__name__)
@@ -133,6 +133,11 @@ class SupervisedTrainer:
         """The recipe this trainer applies."""
         return self._recipe
 
+    @property
+    def device_for_computation(self) -> torch.device:
+        """The device this trainer puts its batches and its model on."""
+        return self._device_for_computation
+
     def train(
         self,
         model: TrainableModel,
@@ -145,10 +150,11 @@ class SupervisedTrainer:
         """Run the session and return what it did.
 
         Args:
-            model: Model to update in place. Its parameters must already be in
-                whatever state the caller wants training to start from; the
-                trainer never reinitializes on its own, because track A and
-                track B disagree about exactly that.
+            model: Model to update in place, moved onto the training device
+                first. Its parameters must already be in whatever state the
+                caller wants training to start from; the trainer never
+                reinitializes on its own, because track A and track B disagree
+                about exactly that.
             images: Training images, ``NCHW``, unpreprocessed.
             labels: Long tensor of class indices.
             batch_order_generator: Stream owning the minibatch permutation.
@@ -174,6 +180,9 @@ class SupervisedTrainer:
 
         images = images.to(self._device_for_computation)
         labels = labels.to(torch.long).to(self._device_for_computation)
+        # Before the optimizer is built, so it captures parameters that are
+        # already on the training device rather than their CPU originals.
+        model = move_model_to_device(model, self._device_for_computation)
         loss_function = nn.CrossEntropyLoss(weight=self._class_weights)
         optimizer = self._recipe.build_optimizer(list(model.parameters()))
         model.train()

@@ -100,6 +100,10 @@ class BenchmarkSettings:
         maximum_phenotype_parameters: Candidates above this are rejected.
         search_budget_seconds: Active wall-clock allowance of the search.
             ``None`` leaves the search bounded only by its generation count.
+        device_for_computation: The one device every training session and every
+            forward pass of this run happens on. Chosen explicitly rather than
+            probed, so a run that was meant for the GPU fails loudly instead of
+            quietly producing CPU timings under a wall-clock budget.
         uses_augmentation: Whether the training augmentation runs at all.
         uses_identity_standardization: Skip fitting dataset statistics and hand
             the model images in ``[0, 1]``. Set only for a model that brings its
@@ -123,6 +127,7 @@ class BenchmarkSettings:
     bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
     maximum_phenotype_parameters: int | None = None
     search_budget_seconds: float | None = None
+    device_for_computation: torch.device = field(default_factory=lambda: torch.device("cpu"))
     uses_augmentation: bool = True
     uses_identity_standardization: bool = False
     cache_directory: Path | None = None
@@ -297,7 +302,7 @@ def run_search_stage(
         search_validation=data.search_validation,
         preprocessor=preprocessor,
         class_weights=compute_balanced_class_weights(data.train.labels, NUMBER_OF_CLASSES),
-        device_for_computation=torch.device("cpu"),
+        device_for_computation=settings.device_for_computation,
         root_seed=settings.search_seed,
         candidate_recipe=settings.candidate_recipe,
         inference_batch_size=settings.inference_batch_size,
@@ -344,7 +349,7 @@ def retrain_topology_for_track_b(
     trainer = SupervisedTrainer(
         recipe=settings.track_b_recipe,
         preprocessor=preprocessor,
-        device_for_computation=torch.device("cpu"),
+        device_for_computation=settings.device_for_computation,
         class_weights=compute_balanced_class_weights(combined_labels, NUMBER_OF_CLASSES),
     )
     training_result = trainer.train(
@@ -433,7 +438,7 @@ def freeze_and_calibrate(
         group_ids=threshold_split.group_ids,
         preprocessor=preprocessor,
         batch_size=settings.inference_batch_size,
-        device_for_computation=torch.device("cpu"),
+        device_for_computation=settings.device_for_computation,
         model_id=model_id,
         stage=track,
         split_name=THRESHOLD_VALIDATION_SPLIT,
@@ -498,7 +503,7 @@ def evaluate_on_official_test(
             group_ids=test_split.group_ids,
             preprocessor=frozen.preprocessor,
             batch_size=settings.inference_batch_size,
-            device_for_computation=torch.device("cpu"),
+            device_for_computation=settings.device_for_computation,
             model_id=frozen.model_id,
             stage=frozen.track,
             split_name=OFFICIAL_TEST_SPLIT,
@@ -748,6 +753,7 @@ def _effective_configuration(settings: BenchmarkSettings, method_name: str) -> d
         "confidence_level": settings.bootstrap.confidence_level,
         "maximum_phenotype_parameters": settings.maximum_phenotype_parameters,
         "search_budget_seconds": settings.search_budget_seconds,
+        "device_for_computation": str(settings.device_for_computation),
         "uses_augmentation": settings.uses_augmentation,
         "uses_identity_standardization": settings.uses_identity_standardization,
     }

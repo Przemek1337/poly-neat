@@ -58,6 +58,20 @@ The synthetic images are not radiographs. A smoke run checks the plumbing -
 both tracks, threshold selection, checkpoint round-trip, prediction export,
 the bootstrap - and its numbers must never appear in a results table.
 
+### Choosing the device
+
+`--cpu` and `--gpu` are mutually exclusive and pick the one device the whole
+run uses: the search, both training tracks, threshold scoring and the test
+evaluation. There is no per-stage device and no silent fallback - `--gpu`
+without CUDA exits rather than quietly producing CPU timings, which under a
+wall-clock budget would change what the budget actually bought. Passing
+neither keeps the CPU, which is what the smoke profiles are sized for; the
+pilot and the result series are meant for `--gpu`.
+
+The device that was actually used is written into `effective_configuration`
+in every run report, so a results table can be checked against it rather than
+trusted.
+
 ## Installing what the benchmark needs
 
 Image decoding, the reference metric implementations and the transfer-learning
