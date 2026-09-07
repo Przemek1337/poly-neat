@@ -23,10 +23,10 @@ import yaml
 from examples._example_cli import parse_device_from_cli
 from examples._experiment import ExperimentReport, print_experiment_report
 from examples.pediatric_pneumonia._methods import make_exact_search
-from examples.pediatric_pneumonia._smoke import run_smoke_experiment
+from examples.pediatric_pneumonia._smoke import config_path_for, run_smoke_experiment
 from polyneat.configs.exact.exact_config import EXACTConfig
 
-CONFIG_FILE_PATH = Path(__file__).with_suffix(".yaml")
+CONFIG_FILE_PATH = config_path_for(__file__)
 _ARTIFACTS_DIRECTORY = Path(__file__).parent / "artifacts" / "exact_smoke"
 
 

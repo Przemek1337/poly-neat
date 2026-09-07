@@ -26,8 +26,8 @@ from polyneat.algorithms.deepneat.deepneat_algorithm import DeepNEATAlgorithm
 from polyneat.configs.deepneat.deepneat_config import DeepNEATConfig
 
 _PROFILE_PATHS = (
-    Path("examples/pediatric_pneumonia/deepneat_smoke.yaml"),
-    Path("examples/pediatric_pneumonia/random_search_smoke.yaml"),
+    Path("examples/pediatric_pneumonia/configs/deepneat_smoke.yaml"),
+    Path("examples/pediatric_pneumonia/configs/random_search_smoke.yaml"),
 )
 
 
@@ -89,7 +89,7 @@ class TestProtocolLockTemplate:
     def test_the_shipped_template_refuses_to_validate(self) -> None:
         """It is a list of decisions to make, not a runnable lock."""
         lock = load_protocol_lock(
-            Path("examples/pediatric_pneumonia/protocol.lock.template.yaml")
+            Path("examples/pediatric_pneumonia/configs/protocol.lock.template.yaml")
         )
         with pytest.raises(ProtocolLockError) as raised:
             validate_protocol_lock_for_full_run(lock, manifest_sha256="a" * 64)
@@ -101,7 +101,7 @@ class TestProtocolLockTemplate:
         from examples.pediatric_pneumonia._protocol_lock import REQUIRED_LOCK_KEYS
 
         lock = load_protocol_lock(
-            Path("examples/pediatric_pneumonia/protocol.lock.template.yaml")
+            Path("examples/pediatric_pneumonia/configs/protocol.lock.template.yaml")
         )
         assert set(REQUIRED_LOCK_KEYS) <= set(lock.sections)
         for section_name, keys in REQUIRED_LOCK_KEYS.items():

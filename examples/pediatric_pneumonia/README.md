@@ -40,6 +40,20 @@ These are a cross-check against the download, not proof of integrity or of
 patient disjointness. Any deviation is reported and the manifest records what
 was actually found.
 
+### How this package is laid out
+
+```
+configs/          one yaml per profile, plus protocol.lock.template.yaml
+<profile>.py      the five runnable entry points, one per method
+dataset.py        decoding, resizing and the split cache
+_*.py             audit, manifest, protocol lock, stage controller, methods
+```
+
+A profile reads the yaml named after it, so `deepneat_smoke.py` reads
+`configs/deepneat_smoke.yaml`. The pairing is derived from the module name in
+`config_path_for`, not written out per profile, so a rename cannot leave the
+two pointing at different files.
+
 ### Pointing a run at your copy
 
 Every profile takes its data directory from its yaml. The smoke profiles

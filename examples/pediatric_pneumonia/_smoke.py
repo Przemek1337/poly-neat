@@ -35,10 +35,28 @@ from polyneat.training.training_recipe import LearningRateSchedule, TrainingReci
 
 logger = get_logger(__name__)
 
+CONFIGS_DIRECTORY = Path(__file__).parent / "configs"
 SMOKE_DATA_DIRECTORY = Path(__file__).parent / "data" / "synthetic_smoke"
 SMOKE_PROTOCOL_ID = "pediatric-pneumonia-smoke-synthetic-v1"
 SMOKE_DATASET_RELEASE = "synthetic/pediatric-pneumonia-smoke"
 SMOKE_DATASET_LICENSE = "not-applicable-synthetic-fixture"
+
+
+def config_path_for(profile_module_file: str) -> Path:
+    """Locate the yaml belonging to one profile module.
+
+    Configurations live in ``configs/`` rather than beside their modules, so
+    the yaml a profile reads is named after the module rather than found next
+    to it. Deriving the name from ``__file__`` keeps the pair together under a
+    rename instead of leaving a path constant to drift.
+
+    Args:
+        profile_module_file: The profile module's ``__file__``.
+
+    Returns:
+        Path of that profile's yaml inside :data:`CONFIGS_DIRECTORY`.
+    """
+    return CONFIGS_DIRECTORY / f"{Path(profile_module_file).stem}.yaml"
 
 
 def ensure_smoke_archive(data_directory: Path | None = None) -> Path:
