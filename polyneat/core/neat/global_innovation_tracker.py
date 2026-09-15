@@ -169,3 +169,28 @@ class GlobalInnovationTracker:
     def next_innovation_id_snapshot(self) -> InnovationId:
         """Read-only view of the next innovation id — useful for logs and tests."""
         return self._next_innovation_id
+
+    def state_dict(self) -> dict:
+        """Export counters and historical markings without exposing mutable tables."""
+        return {
+            "next_innovation_id": self._next_innovation_id,
+            "next_node_id": self._next_node_id,
+            "edges": [
+                [a, b, value]
+                for (a, b), value in self._within_generation_edge_to_innovation_id.items()
+            ],
+            "splits": [
+                [key, *value] for key, value in self._within_generation_split_to_node_record.items()
+            ],
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore a snapshot created by this tracker family."""
+        self._next_innovation_id = int(state["next_innovation_id"])
+        self._next_node_id = int(state["next_node_id"])
+        self._within_generation_edge_to_innovation_id = {
+            (a, b): value for a, b, value in state["edges"]
+        }
+        self._within_generation_split_to_node_record = {
+            row[0]: NodeSplitRecord(*row[1:]) for row in state["splits"]
+        }

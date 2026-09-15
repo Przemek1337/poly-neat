@@ -2,7 +2,7 @@
 
 Run it as a module from the repository root::
 
-    uv run python -m examples.pediatric_pneumonia.exact_smoke
+    uv run python -m examples.pediatric_pneumonia.exact
 
 EXACT inherits its trained kernels between generations, so track A keeps the
 genome as the search left it. Track B resets that genome first - kernels, batch
@@ -20,30 +20,38 @@ from typing import cast
 import torch
 import yaml
 
-from examples._example_cli import parse_device_from_cli
-from examples._experiment import ExperimentReport, print_experiment_report
+from examples._experiment import ExperimentReport
+from examples.pediatric_pneumonia._execution import ExecutionOptions
 from examples.pediatric_pneumonia._methods import make_exact_search
-from examples.pediatric_pneumonia._smoke import config_path_for, run_smoke_experiment
+from examples.pediatric_pneumonia._profiles import (
+    CONFIGS_DIRECTORY,
+    run_profile_experiment,
+    run_profile_main,
+)
 from polyneat.configs.exact.exact_config import EXACTConfig
 
-CONFIG_FILE_PATH = config_path_for(__file__)
-_ARTIFACTS_DIRECTORY = Path(__file__).parent / "artifacts" / "exact_smoke"
+CONFIG_FILE_PATH = CONFIGS_DIRECTORY / "exact_smoke.yaml"
+_ARTIFACTS_DIRECTORY = Path(__file__).parent / "artifacts" / "exact"
 
 
 def run_experiment(
     device: torch.device | None = None,
     random_seed: int | None = None,
     artifacts_directory: Path | None = None,
+    data_directory: Path | None = None,
+    config_file_path: Path | None = None,
+    execution: ExecutionOptions | None = None,
 ) -> ExperimentReport:
     """Run one EXACT search through the full protocol and report both tracks."""
-    profile = yaml.safe_load(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
+    resolved_config_file_path = config_file_path or CONFIG_FILE_PATH
+    profile = yaml.safe_load(resolved_config_file_path.read_text(encoding="utf-8"))
     # The strict loader is declared to return the base config type; the
     # concrete type is what the search factory needs.
     algorithm_config = cast(EXACTConfig, EXACTConfig.from_dict(profile["algorithm"]))
     if random_seed is not None:
         algorithm_config.random_seed = random_seed
-    return run_smoke_experiment(
-        config_file_path=CONFIG_FILE_PATH,
+    return run_profile_experiment(
+        config_file_path=resolved_config_file_path,
         method_name="exact",
         build_search=make_exact_search(
             algorithm_config,
@@ -53,15 +61,17 @@ def run_experiment(
         device=device,
         random_seed=random_seed,
         artifacts_directory=artifacts_directory,
+        data_directory=data_directory,
+        execution=execution,
     )
 
 
 def main() -> None:
     """Command-line entry point."""
-    print_experiment_report(
-        run_experiment(
-            device=parse_device_from_cli(), artifacts_directory=_ARTIFACTS_DIRECTORY
-        )
+    run_profile_main(
+        run_experiment,
+        default_config_file_path=CONFIG_FILE_PATH,
+        artifacts_directory=_ARTIFACTS_DIRECTORY,
     )
 
 

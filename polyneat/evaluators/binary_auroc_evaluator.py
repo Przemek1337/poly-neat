@@ -20,6 +20,7 @@ untouched; this is an addition beside it, not a replacement.
 
 from __future__ import annotations
 
+import copy
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -144,11 +145,64 @@ class _BinaryAurocEvaluatorBase:
         self._best_fitness: float | None = None
         self._best_evaluation_id: str | None = None
         self._best_model_state: dict | None = None
+        self._best_parameter_count: int | None = None
 
     @property
     def evaluation_records(self) -> tuple[EvaluationRecord, ...]:
         """Every evaluation this evaluator has performed, in order."""
         return tuple(self._evaluation_records)
+
+    def state_dict(self) -> dict:
+        """Independent state of scoring; never includes dataset tensors."""
+        return copy.deepcopy(
+            {
+                "generation_counter": self._generation_counter,
+                "records": [record.to_serializable_dict() for record in self._evaluation_records],
+                "best_fitness": self._best_fitness,
+                "best_id": self._best_evaluation_id,
+                "best_model_state": self._best_model_state,
+                "best_parameter_count": self._best_parameter_count,
+            }
+        )
+
+    def load_state_dict(self, state: dict) -> None:
+        self._generation_counter = int(state["generation_counter"])
+        self._evaluation_records = [
+            EvaluationRecord(**{**row, "status": EvaluationStatus(row["status"])})
+            for row in state["records"]
+        ]
+        self._best_fitness = state["best_fitness"]
+        self._best_evaluation_id = state["best_id"]
+        self._best_model_state = copy.deepcopy(state["best_model_state"])
+        self._best_parameter_count = state["best_parameter_count"]
+
+    def evaluate_candidate(self, phenotype: Phenotype, evaluation_id: str) -> EvaluationRecord:
+        """Evaluate one stable ID for a checkpoint-aware, sequential runner."""
+        previous_best = (
+            self._best_fitness,
+            self._best_evaluation_id,
+            self._best_model_state,
+            self._best_parameter_count,
+        )
+        record = self._evaluate_one(phenotype, evaluation_id)
+        if record.is_selectable and self._should_stop is not None and self._should_stop():
+            (
+                self._best_fitness,
+                self._best_evaluation_id,
+                self._best_model_state,
+                self._best_parameter_count,
+            ) = previous_best
+            record = EvaluationRecord(
+                evaluation_id=evaluation_id,
+                status=EvaluationStatus.FAILED_DEADLINE,
+                failure_reason="evaluation did not complete before the deadline",
+                wall_clock_seconds=record.wall_clock_seconds,
+                optimizer_steps=record.optimizer_steps,
+                examples_processed=record.examples_processed,
+                parameter_count=record.parameter_count,
+            )
+        self._evaluation_records.append(record)
+        return record
 
     @property
     def best_fitness(self) -> float | None:
@@ -263,10 +317,19 @@ class _BinaryAurocEvaluatorBase:
         Ties keep the earlier candidate, matching the protocol's tie-break on a
         stable evaluation order.
         """
-        if self._best_fitness is not None and fitness <= self._best_fitness:
+        if self._should_stop is not None and self._should_stop():
             return
+        parameter_count = _count_parameters(phenotype)
+        if self._best_fitness is not None:
+            if fitness < self._best_fitness or (
+                fitness == self._best_fitness
+                and self._best_parameter_count is not None
+                and parameter_count >= self._best_parameter_count
+            ):
+                return
         state_dict_method = getattr(phenotype, "state_dict", None)
         self._best_fitness = fitness
+        self._best_parameter_count = parameter_count
         self._best_evaluation_id = evaluation_id
         self._best_model_state = (
             None
@@ -452,9 +515,7 @@ class TrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
         )
 
 
-def _reinitialize_with_phenotype_method(
-    phenotype: Phenotype, generator: torch.Generator
-) -> None:
+def _reinitialize_with_phenotype_method(phenotype: Phenotype, generator: torch.Generator) -> None:
     """Reinitialize through the phenotype's own method, seeding it explicitly.
 
     A phenotype that owns an initialization scheme keeps it - DeepNEAT evolves

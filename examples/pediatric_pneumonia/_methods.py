@@ -60,8 +60,11 @@ from polyneat.nn.pretrained_image_classifier import (
     PretrainedResNetClassifier,
 )
 from polyneat.runner.evaluation_record import EvaluationRecord
-from polyneat.runner.evolution_runner import EvolutionRunner
-from polyneat.runner.termination_criteria import MaxGenerationsTermination
+from polyneat.runner.resumable_search import (
+    run_resumable_candidates,
+    run_resumable_evolution,
+)
+from polyneat.runner.search_session import SearchSession
 from polyneat.training.random_streams import (
     RandomStreamRole,
     create_numpy_generator,
@@ -171,16 +174,15 @@ def make_deepneat_search(
             config, device_for_phenotype_computation=context.device_for_computation
         )
         evaluator = _build_trained_evaluator(context)
-        result = EvolutionRunner(
-            algorithm=algorithm,
-            fitness_evaluator=evaluator,
-            termination_criterion=MaxGenerationsTermination(
-                max_generations=number_of_generations - 1
-            ),
-            random_seed=context.root_seed,
-        ).run_evolution()
-
-        best_genome = cast(DeepNEATGenome, result.best_genome_ever_found)
+        best, _fitness, generations = run_resumable_evolution(
+            algorithm,
+            evaluator,
+            session=context.session or SearchSession(None, binding={}, budget=context.budget),
+            genome_from_dict=DeepNEATGenome.from_serializable_dict,
+            seed=context.root_seed,
+            number_of_generations=number_of_generations,
+        )
+        best_genome = cast(DeepNEATGenome, best)
         track_a_model = cast(
             TorchLayerStackPhenotype,
             algorithm.phenotype_decoder.build_phenotype_from_genome(best_genome),
@@ -196,7 +198,7 @@ def make_deepneat_search(
             genome_payload=best_genome.to_serializable_dict(),
             selection_fitness=selection_fitness,
             evaluation_records=evaluator.evaluation_records,
-            number_of_generations=len(result.full_generation_history),
+            number_of_generations=generations,
             search_seconds=time.perf_counter() - search_started_at,
             parameter_count=_count_parameters(track_a_model),
         )
@@ -250,10 +252,9 @@ def make_random_search(
             evaluation_id="random_search",
         )
 
-        sampled_genomes: list[DeepNEATGenome] = []
-        for candidate_index in range(number_of_candidates):
+        def draw() -> DeepNEATGenome:
             population = algorithm.create_initial_population(sampling_rng)
-            drawn_genome = cast(
+            genome = cast(
                 NEATGenome,
                 population.genomes[int(sampling_rng.integers(0, len(population.genomes)))],
             )
@@ -263,28 +264,21 @@ def make_random_search(
                 )
             )
             for _ in range(number_of_mutations):
-                drawn_genome = algorithm.mutation.apply_to_genome(
-                    drawn_genome, sampling_rng, algorithm.innovation_tracker
+                genome = algorithm.mutation.apply_to_genome(
+                    genome, sampling_rng, algorithm.innovation_tracker
                 )
-            sampled_genomes.append(cast(DeepNEATGenome, drawn_genome))
-            logger.debug(
-                "Random search drew candidate %d with %d structural mutations",
-                candidate_index,
-                number_of_mutations,
-            )
+            return cast(DeepNEATGenome, genome)
 
-        phenotypes = [
-            algorithm.phenotype_decoder.build_phenotype_from_genome(genome)
-            for genome in sampled_genomes
-        ]
-        evaluator.evaluate_batch_of_phenotypes(phenotypes)
-        if evaluator.best_evaluation_id is None:
-            raise SelectedCandidateMismatchError(
-                "the random search evaluated no candidate successfully"
-            )
-        best_position = int(evaluator.best_evaluation_id.split("cand")[-1])
-        best_genome = sampled_genomes[best_position]
-
+        best, _fitness = run_resumable_candidates(
+            algorithm,
+            evaluator,
+            session=context.session or SearchSession(None, binding={}, budget=context.budget),
+            genome_from_dict=DeepNEATGenome.from_serializable_dict,
+            rng=sampling_rng,
+            draw=draw,
+            count=number_of_candidates,
+        )
+        best_genome = cast(DeepNEATGenome, best)
         track_a_model = cast(
             TorchLayerStackPhenotype,
             algorithm.phenotype_decoder.build_phenotype_from_genome(best_genome),
@@ -308,6 +302,24 @@ def make_random_search(
     return search
 
 
+def _evaluate_baseline(context: SearchContext, evaluator, model) -> None:
+    """Resume completed baseline evaluations; incomplete training rolls back."""
+    session = context.session
+    if session is not None and session.state is not None:
+        if session.state["kind"] != "baseline":
+            raise ValueError("wrong checkpoint kind")
+        evaluator.load_state_dict(session.state["evaluator"])
+        if session.state["done"]:
+            model.load_state_dict(evaluator.best_model_state)
+            model.eval()
+            return
+    if session is not None:
+        session.commit({"kind": "baseline", "done": False, "evaluator": evaluator.state_dict()})
+    evaluator.evaluate_candidate(model, "gen0/cand0")
+    if session is not None:
+        session.commit({"kind": "baseline", "done": True, "evaluator": evaluator.state_dict()})
+
+
 def make_fixed_cnn_baseline(
     architecture: FixedConvolutionalNetworkConfig,
 ) -> Callable[[SearchContext], SelectedCandidate]:
@@ -323,11 +335,9 @@ def make_fixed_cnn_baseline(
         search_started_at = time.perf_counter()
         evaluator = _build_trained_evaluator(context)
         model = FixedConvolutionalNetwork(architecture)
-        evaluator.evaluate_batch_of_phenotypes([model])
+        _evaluate_baseline(context, evaluator, model)
         if evaluator.best_fitness is None:
-            raise SelectedCandidateMismatchError(
-                "the fixed CNN baseline could not be evaluated"
-            )
+            raise SelectedCandidateMismatchError("the fixed CNN baseline could not be evaluated")
         return SelectedCandidate(
             track_a_model=model,
             rebuild_model=lambda: FixedConvolutionalNetwork(architecture),
@@ -403,7 +413,9 @@ def make_exact_search(
             batch_order_generator=batch_order_generator,
             should_stop=None if context.budget is None else context.budget.should_stop,
         )
-        algorithm.backpropagation_trainer = trainer
+        # In this sequential runner train immediately before scoring a candidate.
+        # This preserves inheritance while allowing a completed model to survive
+        # a deadline inside the initial population, not only after its last member.
 
         evaluator = PretrainedBinaryAurocEvaluator(
             validation=_validation_split(context),
@@ -413,16 +425,29 @@ def make_exact_search(
             maximum_phenotype_parameters=context.maximum_phenotype_parameters,
             should_stop=None if context.budget is None else context.budget.should_stop,
         )
-        result = EvolutionRunner(
-            algorithm=algorithm,
-            fitness_evaluator=_AdaptedEvaluator(evaluator),
-            termination_criterion=MaxGenerationsTermination(
-                max_generations=number_of_generations - 1
-            ),
-            random_seed=context.root_seed,
-        ).run_evolution()
 
-        best_genome = cast(EXACTGenome, result.best_genome_ever_found)
+        def export_streams() -> dict:
+            return {
+                "augmentation": augmentation_generator.get_state(),
+                "batch_order": batch_order_generator.get_state(),
+            }
+
+        def import_streams(state: dict) -> None:
+            augmentation_generator.set_state(state["augmentation"])
+            batch_order_generator.set_state(state["batch_order"])
+
+        best, selection_fitness, generations = run_resumable_evolution(
+            algorithm,
+            _AdaptedEvaluator(evaluator),
+            session=context.session or SearchSession(None, binding={}, budget=context.budget),
+            genome_from_dict=EXACTGenome.from_serializable_dict,
+            seed=context.root_seed,
+            number_of_generations=number_of_generations,
+            export_training_state=export_streams,
+            import_training_state=import_streams,
+            prepare_genome=lambda genome: trainer.train_genome(cast(EXACTGenome, genome)),
+        )
+        best_genome = cast(EXACTGenome, best)
         track_a_model = FlattenedImageInputAdapter(
             cast(
                 TorchConvolutionalPhenotype,
@@ -440,9 +465,9 @@ def make_exact_search(
             ),
             genome_kind=type(best_genome).__name__,
             genome_payload=best_genome.to_serializable_dict(),
-            selection_fitness=float(result.best_fitness_ever_achieved),
+            selection_fitness=selection_fitness,
             evaluation_records=evaluator.evaluation_records,
-            number_of_generations=len(result.full_generation_history),
+            number_of_generations=generations,
             search_seconds=time.perf_counter() - search_started_at,
             parameter_count=_count_parameters(track_a_model),
         )
@@ -466,6 +491,15 @@ class _AdaptedEvaluator:
         return self._inner.evaluate_batch_of_phenotypes(
             [FlattenedImageInputAdapter(phenotype) for phenotype in phenotypes]
         )
+
+    def evaluate_candidate(self, phenotype, evaluation_id: str) -> EvaluationRecord:
+        return self._inner.evaluate_candidate(FlattenedImageInputAdapter(phenotype), evaluation_id)
+
+    def state_dict(self) -> dict:
+        return self._inner.state_dict()
+
+    def load_state_dict(self, state: dict) -> None:
+        self._inner.load_state_dict(state)
 
     @property
     def evaluation_records(self) -> tuple[EvaluationRecord, ...]:
@@ -494,7 +528,7 @@ def make_transfer_learning_baseline(
         search_started_at = time.perf_counter()
         evaluator = _build_trained_evaluator(context, stage="transfer_learning")
         model = PretrainedResNetClassifier(architecture)
-        evaluator.evaluate_batch_of_phenotypes([model])
+        _evaluate_baseline(context, evaluator, model)
         if evaluator.best_fitness is None:
             failure = evaluator.evaluation_records[0].failure_reason
             raise SelectedCandidateMismatchError(

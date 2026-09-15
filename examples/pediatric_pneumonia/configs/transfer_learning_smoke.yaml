@@ -13,6 +13,10 @@ protocol:
   protocol_id: pediatric-pneumonia-smoke-synthetic-v1
   dataset_release: synthetic/pediatric-pneumonia-smoke
   dataset_license: not-applicable-synthetic-fixture
+  # This profile may generate its own archive when no --data-directory is
+  # given. Full profiles must not: fake radiographs would produce a run
+  # report indistinguishable from a real one.
+  allows_synthetic_archive: true
   image_side: 64
   split_seed: 11
   search_seed: 101

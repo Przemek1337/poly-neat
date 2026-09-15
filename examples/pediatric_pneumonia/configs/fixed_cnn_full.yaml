@@ -1,0 +1,56 @@
+# Full profile: the hand-designed CNN baseline, 128 pixels.
+#
+# NOT YET FROZEN. See deepneat_full.yaml for what the pilot has to settle. There
+# is no allows_synthetic_archive key on purpose: this profile refuses to invent
+# data and stops unless --data-directory points at the extracted download.
+#
+# The architecture below must be fixed before the series, and if several
+# hand-designed configurations are tried first, the cost of trying them is
+# baseline tuning and belongs in the report next to the search budgets.
+protocol:
+  protocol_id: pediatric-pneumonia-full-v1-pilot
+  # Replace both with what the download actually states before any reported
+  # run. They are copied verbatim into every run report.
+  dataset_release: kaggle/andrewmvd/pediatric-pneumonia-chest-xray
+  dataset_license: unverified-confirm-against-the-download
+
+  image_side: 128
+  split_seed: 20260905
+  search_seed: 101            # the benchmark harness overrides this per repeat
+  retraining_seeds: [201, 202, 203]
+  bootstrap_seed: 13
+  inference_batch_size: 64
+  maximum_phenotype_parameters: 5000000
+  uses_augmentation: true
+
+architecture:
+  convolution_channels: [32, 64, 128]
+  kernel_size: 3
+  uses_batch_normalization: true
+  dropout_probability: 0.3
+
+candidate_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 30
+  schedule: cosine
+  minimum_learning_rate: 0.0001
+
+# The one shared recipe every selected topology is retrained under. It must be
+# byte-identical across deepneat_full, exact_full, random_search_full and
+# fixed_cnn_full: track B exists precisely so that no method gets its own.
+track_b_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 30
+  schedule: cosine
+  minimum_learning_rate: 0.0001
+
+bootstrap:
+  number_of_replicates: 2000
+  maximum_attempts: 20000
+  confidence_level: 0.95

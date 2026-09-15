@@ -1,0 +1,98 @@
+# Full profile: EXACT on the real pediatric pneumonia archive, 128 pixels.
+#
+# NOT YET FROZEN. Every budget below is an input to the pilot, not a result of
+# it; see deepneat_full.yaml for what the pilot has to settle before a result
+# series starts. There is no allows_synthetic_archive key on purpose: this
+# profile refuses to invent data and stops unless --data-directory points at
+# the extracted download.
+#
+# EXACT is Lamarckian: it trains between generations and writes the trained
+# kernels back into the genotype, so its evaluator only scores. The version
+# used here runs generationally, unlike the distributed volunteer-computing
+# loop of the source paper, and the report has to say so.
+protocol:
+  protocol_id: pediatric-pneumonia-full-v1-pilot
+  # Replace both with what the download actually states before any reported
+  # run. They are copied verbatim into every run report.
+  dataset_release: kaggle/andrewmvd/pediatric-pneumonia-chest-xray
+  dataset_license: unverified-confirm-against-the-download
+
+  image_side: 128
+  split_seed: 20260905
+  search_seed: 101            # the benchmark harness overrides this per repeat
+  retraining_seeds: [201, 202, 203]
+  bootstrap_seed: 13
+  inference_batch_size: 64
+  maximum_phenotype_parameters: 5000000   # pilot: confirm against device memory
+  search_budget_seconds: 7200             # pilot: confirm against generation cost
+  uses_augmentation: true
+
+search:
+  number_of_generations: 30   # a cap; the wall-clock budget is what binds
+
+algorithm:
+  population_size: 20
+  number_of_input_nodes: 1
+  number_of_output_nodes: 2
+  random_seed: 101
+  # Ignored by this protocol: it runs search, training and scoring on one
+  # device (--cpu/--gpu) so phenotypes cannot end up somewhere other than
+  # their batches. Kept because the algorithm config requires it.
+  device_for_phenotype_evaluation: cuda
+
+  input_image_height: 128
+  input_image_width: 128
+
+  initial_population_strategy: exact_minimal_cnn
+  number_of_mutations_per_genome: 2
+  probability_of_crossover_vs_mutation_only: 0.2
+  more_fit_parent_edge_inclusion_rate: 0.8
+  less_fit_parent_edge_inclusion_rate: 0.4
+  tournament_size_for_parent_selection: 3
+  use_epigenetic_weight_initialization: true
+  use_simplex_hyperparameter_optimization: false
+
+  number_of_training_epochs_per_genome: 4
+  training_batch_size: 64
+  velocity_reset_interval: 1000
+  input_dropout_probability: 0.0
+  hidden_dropout_probability: 0.0
+  use_batch_normalization: true
+  batch_normalization_alpha: 0.1
+  backpropagation_learning_rate: 0.0025
+  learning_rate_decay_factor: 0.95
+  minimum_learning_rate: 0.00001
+  backpropagation_momentum: 0.5
+  momentum_decay_factor: 0.95
+  maximum_momentum: 0.99
+  backpropagation_weight_decay: 0.0005
+  weight_decay_decay_factor: 0.95
+  minimum_weight_decay: 0.000001
+
+# Track A uses EXACT's own learning mechanism; this recipe is what the shared
+# trainer would apply and is recorded for comparability of the reported cost.
+candidate_recipe:
+  learning_rate: 0.0025
+  momentum: 0.5
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 4
+  schedule: constant
+  minimum_learning_rate: 0.00001
+
+# The one shared recipe every selected topology is retrained under. It must be
+# byte-identical across deepneat_full, exact_full, random_search_full and
+# fixed_cnn_full: track B exists precisely so that no method gets its own.
+track_b_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 30
+  schedule: cosine
+  minimum_learning_rate: 0.0001
+
+bootstrap:
+  number_of_replicates: 2000
+  maximum_attempts: 20000
+  confidence_level: 0.95

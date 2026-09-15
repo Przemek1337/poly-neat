@@ -20,6 +20,7 @@ from typing import cast
 import torch
 from torch import nn
 
+from examples.pediatric_pneumonia._profiles import load_profile_settings
 from examples.pediatric_pneumonia._protocol import (
     BenchmarkSettings,
     PreparedData,
@@ -28,7 +29,6 @@ from examples.pediatric_pneumonia._protocol import (
     _effective_configuration,
     run_search_stage,
 )
-from examples.pediatric_pneumonia._smoke import load_smoke_settings
 from examples.pediatric_pneumonia.dataset import SplitTensors
 from polyneat.training.trainable_model import TrainableModel, move_model_to_device
 from polyneat.training.training_recipe import LearningRateSchedule, TrainingRecipe
@@ -186,7 +186,7 @@ def test_effective_configuration_records_the_device_that_ran() -> None:
 
 
 def test_smoke_settings_take_the_device_from_the_flag(tmp_path: Path) -> None:
-    settings = load_smoke_settings(
+    settings = load_profile_settings(
         Path("examples/pediatric_pneumonia/configs/fixed_cnn_smoke.yaml"),
         data_directory=tmp_path / "archive",
         device=_SECOND_DEVICE,
@@ -196,7 +196,7 @@ def test_smoke_settings_take_the_device_from_the_flag(tmp_path: Path) -> None:
 
 
 def test_smoke_settings_stay_on_the_cpu_without_a_flag(tmp_path: Path) -> None:
-    settings = load_smoke_settings(
+    settings = load_profile_settings(
         Path("examples/pediatric_pneumonia/configs/fixed_cnn_smoke.yaml"),
         data_directory=tmp_path / "archive",
     )

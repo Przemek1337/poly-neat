@@ -233,5 +233,8 @@ def test_every_example_module_is_registered() -> None:
             continue
         if relative_path.stem == "dataset":
             continue
+        # This CLI freezes a protocol; it is not a runnable model experiment.
+        if relative_path.as_posix() == "pediatric_pneumonia/freeze.py":
+            continue
         module_paths.add("examples." + ".".join(relative_path.with_suffix("").parts))
     assert module_paths == set(EXAMPLE_REGISTRY.values())

@@ -95,6 +95,8 @@ files = [
     "polyneat/evaluators/bootstrap_confidence_intervals.py",
     "polyneat/runner/evaluation_record.py",
     "polyneat/runner/run_checkpoint.py",
+    "polyneat/runner/search_session.py",
+    "polyneat/runner/resumable_search.py",
     "polyneat/runner/wall_clock_budget.py",
     "polyneat/nn/fixed_convolutional_network.py",
     "polyneat/nn/pretrained_image_classifier.py",

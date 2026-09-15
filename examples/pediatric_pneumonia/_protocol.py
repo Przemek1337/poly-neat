@@ -20,9 +20,10 @@ Stage permissions are enforced by what is passed where, not by convention:
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import torch
@@ -40,6 +41,12 @@ from examples.pediatric_pneumonia._dataset_manifest import (
     DatasetManifest,
     build_manifest_from_audit,
 )
+from examples.pediatric_pneumonia._execution import (
+    ExecutionOptions,
+    execution_environment,
+    validate_execution_lock,
+)
+from examples.pediatric_pneumonia._protocol_lock import ProtocolLockError
 from examples.pediatric_pneumonia.dataset import SplitTensors, load_split_tensors
 from polyneat.evaluators.binary_classification_metrics import (
     REFERENCE_THRESHOLD,
@@ -56,6 +63,8 @@ from polyneat.evaluators.decision_threshold import (
 )
 from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.runner.evaluation_record import EvaluationRecord, count_by_status
+from polyneat.runner.run_checkpoint import build_run_binding
+from polyneat.runner.search_session import SearchSession
 from polyneat.runner.wall_clock_budget import WallClockBudget
 from polyneat.training.class_weights import compute_balanced_class_weights
 from polyneat.training.image_preprocessing import (
@@ -131,6 +140,8 @@ class BenchmarkSettings:
     uses_augmentation: bool = True
     uses_identity_standardization: bool = False
     cache_directory: Path | None = None
+    execution: ExecutionOptions = field(default_factory=ExecutionOptions)
+    profile_payload: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -143,7 +154,7 @@ class PreparedData:
         train: The training split.
         search_validation: The split fitness and model selection use.
         blocking_findings: Audit findings that must be resolved before a full
-            series. Smoke and pilot runs may proceed and report them.
+            series and pilots. Synthetic smoke runs may proceed and report them.
     """
 
     manifest: DatasetManifest
@@ -180,6 +191,7 @@ class SearchContext:
     inference_batch_size: int
     maximum_phenotype_parameters: int | None
     budget: WallClockBudget | None
+    session: SearchSession | None = None
 
     def build_trainer(self) -> SupervisedTrainer:
         """A trainer wired to this stage's preprocessing, weights and budget."""
@@ -242,6 +254,11 @@ def prepare_data(settings: BenchmarkSettings) -> PreparedData:
         split_seed=settings.split_seed,
     )
     manifest_sha256 = manifest.compute_sha256()
+    if manifest.blocking_findings and settings.execution.mode != "smoke":
+        raise ProtocolLockError(
+            "Dataset audit blocks this run: "
+            + "; ".join(finding.message for finding in manifest.blocking_findings)
+        )
 
     def load(split_name: str) -> SplitTensors:
         return load_split_tensors(
@@ -285,7 +302,13 @@ def build_preprocessor(
 
 
 def run_search_stage(
-    settings: BenchmarkSettings, data: PreparedData, search: SearchCallable
+    settings: BenchmarkSettings,
+    data: PreparedData,
+    search: SearchCallable,
+    *,
+    artifacts_directory: Path | None = None,
+    method_name: str = "unspecified",
+    lock_sha256: str = "unlocked",
 ) -> tuple[SelectedCandidate, ImagePreprocessor]:
     """Run one method's search and return what it selected, with its preprocessing."""
     preprocessor = build_preprocessor(settings, data.train.images)
@@ -294,9 +317,20 @@ def run_search_stage(
         if settings.search_budget_seconds is None
         else WallClockBudget(settings.search_budget_seconds)
     )
-    if budget is not None:
-        budget.start()
-
+    session = SearchSession(
+        None if artifacts_directory is None else artifacts_directory / "search",
+        binding=build_run_binding(
+            manifest_sha256=data.manifest_sha256,
+            protocol_lock_sha256=lock_sha256,
+            effective_configuration={
+                **_effective_configuration(settings, method_name),
+                "environment": execution_environment(settings.device_for_computation),
+            },
+        ),
+        budget=budget,
+        resume=settings.execution.resume,
+        lost_work_seconds=settings.execution.lost_work_seconds,
+    )
     context = SearchContext(
         train=data.train,
         search_validation=data.search_validation,
@@ -308,8 +342,14 @@ def run_search_stage(
         inference_batch_size=settings.inference_batch_size,
         maximum_phenotype_parameters=settings.maximum_phenotype_parameters,
         budget=budget,
+        session=session,
     )
-    selected = search(context)
+    if not settings.execution.resume:
+        torch.manual_seed(settings.search_seed)
+    with session:
+        selected = search(context)
+    if budget is not None:
+        selected = replace(selected, search_seconds=budget.consumed_seconds)
     logger.info(
         "Search selected a candidate with search_validation AUROC %.4f after %d generations",
         selected.selection_fitness,
@@ -564,7 +604,34 @@ def run_pneumonia_protocol(
         statuses, the artifact paths and the effective configuration.
     """
     experiment_started_at = time.perf_counter()
+    if settings.execution.mode == "full" and artifacts_directory is None:
+        raise ProtocolLockError("full requires an artifacts directory")
     data = prepare_data(settings)
+    lock_sha256 = "unlocked"
+    if settings.execution.mode == "full":
+        assert settings.execution.protocol_lock_path is not None
+        lock_sha256 = validate_execution_lock(
+            settings.execution.protocol_lock_path,
+            method=method_name,
+            profile=settings.profile_payload,
+            search_seed=settings.search_seed,
+            device=settings.device_for_computation,
+            manifest=data.manifest,
+        )
+    if settings.execution.resume and artifacts_directory is not None:
+        report_path = artifacts_directory / "run_report.json"
+        if report_path.exists():
+            previous = json.loads(report_path.read_text(encoding="utf-8"))
+            if (
+                previous["effective_configuration"]
+                != _effective_configuration(settings, method_name)
+                or previous["manifest_sha256"] != data.manifest_sha256
+                or previous.get("environment")
+                != execution_environment(settings.device_for_computation)
+            ):
+                raise ProtocolLockError("completed run does not match the requested execution")
+            if "summary" in previous:
+                return ExperimentReport(**previous["summary"])
     if artifacts_directory is not None:
         artifacts_directory.mkdir(parents=True, exist_ok=True)
         data.manifest.write_json_file(artifacts_directory / "manifest.json")
@@ -576,7 +643,37 @@ def run_pneumonia_protocol(
             "; ".join(data.blocking_findings[:3]),
         )
 
-    selected, track_a_preprocessor = run_search_stage(settings, data, search)
+    selected, track_a_preprocessor = run_search_stage(
+        settings,
+        data,
+        search,
+        artifacts_directory=artifacts_directory,
+        method_name=method_name,
+        lock_sha256=lock_sha256,
+    )
+
+    if settings.execution.mode == "pilot":
+        # Pilot can inspect only search validation. Neither threshold nor test
+        # tensors are loaded, and no threshold-dependent decisions are made.
+        if artifacts_directory is not None:
+            capture_model_checkpoint(
+                selected.track_a_model,
+                model_id=f"{method_name}_pilot",
+                stage="pilot",
+                genome_kind=selected.genome_kind,
+                genome_payload=selected.genome_payload,
+                preprocessing_state=track_a_preprocessor.state_dict(),
+            ).write_file(artifacts_directory / "checkpoints" / "pilot_selected.pt")
+        return _build_report(
+            settings,
+            data,
+            selected,
+            [],
+            {},
+            method_name=method_name,
+            artifacts_directory=artifacts_directory,
+            experiment_started_at=experiment_started_at,
+        )
 
     frozen_models = [
         freeze_and_calibrate(
@@ -597,8 +694,8 @@ def run_pneumonia_protocol(
         )
     ]
     for retraining_seed in settings.retraining_seeds:
-        retrained_model, retrained_preprocessor, training_summary = (
-            retrain_topology_for_track_b(settings, data, selected, retraining_seed)
+        retrained_model, retrained_preprocessor, training_summary = retrain_topology_for_track_b(
+            settings, data, selected, retraining_seed
         )
         frozen_models.append(
             freeze_and_calibrate(
@@ -677,11 +774,7 @@ def _build_report(
     evaluation_status_counts = count_by_status(list(selected.evaluation_records))
     number_of_evaluations = max(len(selected.evaluation_records), 1)
     metric_values["failed_evaluation_fraction"] = (
-        sum(
-            count
-            for status, count in evaluation_status_counts.items()
-            if status != "succeeded"
-        )
+        sum(count for status, count in evaluation_status_counts.items() if status != "succeeded")
         / number_of_evaluations
     )
 
@@ -711,6 +804,15 @@ def _build_report(
                 },
                 "official_test": test_results,
                 "effective_configuration": _effective_configuration(settings, method_name),
+                "environment": execution_environment(settings.device_for_computation),
+                "summary": {
+                    "metric_values": metric_values,
+                    "number_of_generations": selected.number_of_generations,
+                    "runtime_seconds": time.perf_counter() - experiment_started_at,
+                    "effective_configuration": _effective_configuration(settings, method_name),
+                    "undefined_metrics": undefined_metrics,
+                    "artifact_paths": {"run_report": str(artifacts_directory / "run_report.json")},
+                },
             },
         )
 
@@ -737,6 +839,8 @@ def _effective_configuration(settings: BenchmarkSettings, method_name: str) -> d
     """The configuration this run actually used, after every override."""
     return {
         "method": method_name,
+        "mode": settings.execution.mode,
+        "profile_payload": settings.profile_payload,
         "protocol_id": settings.protocol_id,
         "dataset_release": settings.dataset_release,
         "dataset_license": settings.dataset_license,
@@ -761,9 +865,9 @@ def _effective_configuration(settings: BenchmarkSettings, method_name: str) -> d
 
 def _write_run_report(artifacts_directory: Path, payload: dict) -> None:
     """Write the run report next to the checkpoints and predictions."""
-    import json
-
     artifacts_directory.mkdir(parents=True, exist_ok=True)
-    (artifacts_directory / "run_report.json").write_text(
+    temporary = artifacts_directory / "run_report.json.partial"
+    temporary.write_text(
         json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
     )
+    temporary.replace(artifacts_directory / "run_report.json")

@@ -94,23 +94,17 @@ def compute_layer_hyperparameter_distance(
         per_field_differences.append(
             min(1.0, abs(first_node.dropout_rate - second_node.dropout_rate) / dropout_span)
         )
-    initial_weight_scaling_span = (
-        initial_weight_scaling_max - initial_weight_scaling_min
-    )
+    initial_weight_scaling_span = initial_weight_scaling_max - initial_weight_scaling_min
     if initial_weight_scaling_span > 0.0:
         per_field_differences.append(
             min(
                 1.0,
-                abs(
-                    first_node.initial_weight_scaling
-                    - second_node.initial_weight_scaling
-                )
+                abs(first_node.initial_weight_scaling - second_node.initial_weight_scaling)
                 / initial_weight_scaling_span,
             )
         )
     per_field_differences.append(
-        0.0 if first_node.uses_batch_normalization == second_node.uses_batch_normalization
-        else 1.0
+        0.0 if first_node.uses_batch_normalization == second_node.uses_batch_normalization else 1.0
     )
 
     if first_node.layer_type == "conv":
@@ -201,7 +195,8 @@ def compute_compatibility_distance(
         highest_shared_innovation_id = min(max(first_ids), max(second_ids))
         symmetric_difference = first_ids ^ second_ids
         excess_count = sum(
-            1 for innovation_id in symmetric_difference
+            1
+            for innovation_id in symmetric_difference
             if innovation_id > highest_shared_innovation_id
         )
         disjoint_count = len(symmetric_difference) - excess_count
@@ -318,6 +313,34 @@ class DeepNEATSpeciator:
         self._initial_weight_scaling_max = initial_weight_scaling_max
         self._species_representatives_from_previous_generation: list[_SpeciesRepresentative] = []
         self._next_species_id: SpeciesId = 0
+
+    def state_dict(self) -> dict:
+        """Export representatives and the monotonic species counter."""
+        return {
+            "next_species_id": self._next_species_id,
+            "representatives": [
+                {
+                    "species_id": rep.species_id,
+                    "genome": rep.representative_genome.to_serializable_dict(),
+                    "count": rep.member_genome_count_in_current_generation,
+                    "indices": list(rep.member_indices_in_current_generation),
+                }
+                for rep in self._species_representatives_from_previous_generation
+            ],
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore representatives through the genome's serialization contract."""
+        self._next_species_id = int(state["next_species_id"])
+        self._species_representatives_from_previous_generation = [
+            _SpeciesRepresentative(
+                species_id=row["species_id"],
+                representative_genome=DeepNEATGenome.from_serializable_dict(row["genome"]),
+                member_genome_count_in_current_generation=row["count"],
+                member_indices_in_current_generation=list(row["indices"]),
+            )
+            for row in state["representatives"]
+        ]
 
     def assign_genomes_to_species(
         self, genomes: list[DeepNEATGenome], rng: Generator

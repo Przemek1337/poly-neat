@@ -77,14 +77,12 @@ EXAMPLE_REGISTRY: dict[str, str] = {
     "mnist/exact": "examples.mnist.exact",
     "mnist/hyperneat": "examples.mnist.hyperneat",
     "mnist/neat": "examples.mnist.neat",
-    "pediatric_pneumonia/deepneat_smoke": "examples.pediatric_pneumonia.deepneat_smoke",
-    "pediatric_pneumonia/exact_smoke": "examples.pediatric_pneumonia.exact_smoke",
-    "pediatric_pneumonia/fixed_cnn_smoke": "examples.pediatric_pneumonia.fixed_cnn_smoke",
-    "pediatric_pneumonia/random_search_smoke": (
-        "examples.pediatric_pneumonia.random_search_smoke"
-    ),
-    "pediatric_pneumonia/transfer_learning_smoke": (
-        "examples.pediatric_pneumonia.transfer_learning_smoke"
+    "pediatric_pneumonia/deepneat": "examples.pediatric_pneumonia.deepneat",
+    "pediatric_pneumonia/exact": "examples.pediatric_pneumonia.exact",
+    "pediatric_pneumonia/fixed_cnn": "examples.pediatric_pneumonia.fixed_cnn",
+    "pediatric_pneumonia/random_search": "examples.pediatric_pneumonia.random_search",
+    "pediatric_pneumonia/transfer_learning": (
+        "examples.pediatric_pneumonia.transfer_learning"
     ),
     "retina/hyperneat": "examples.retina.hyperneat",
     "retina/leo": "examples.retina.leo",

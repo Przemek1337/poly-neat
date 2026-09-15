@@ -22,6 +22,7 @@ import argparse
 import datetime
 import hashlib
 import importlib
+import inspect
 import json
 import statistics
 import sys
@@ -43,9 +44,7 @@ def _parse_arguments(argument_list: list[str] | None) -> argparse.Namespace:
         allow_abbrev=False,
     )
     parser.add_argument("example_id", help="example to benchmark, e.g. iris/cneat")
-    parser.add_argument(
-        "--repeats", type=int, default=5, help="number of runs (default: 5)"
-    )
+    parser.add_argument("--repeats", type=int, default=5, help="number of runs (default: 5)")
     parser.add_argument(
         "--base-seed", type=int, default=0, help="evolution seed of the first run (default: 0)"
     )
@@ -60,8 +59,88 @@ def _parse_arguments(argument_list: list[str] | None) -> argparse.Namespace:
             "reproducible from their own output pass it."
         ),
     )
+    parser.add_argument(
+        "--data-directory",
+        type=Path,
+        default=None,
+        help=(
+            "dataset directory, for examples whose run_experiment accepts one. "
+            "Full pediatric pneumonia profiles require it and refuse to run without it."
+        ),
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "profile yaml to run instead of the example's own, for examples whose "
+            "run_experiment accepts one. Its text and digest are what the result "
+            "document records."
+        ),
+    )
     add_device_arguments(parser)
+    parser.add_argument("--mode", choices=("smoke", "pilot", "full"))
+    parser.add_argument("--protocol-lock", type=Path)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--lost-work-seconds", type=float)
     return parser.parse_args(argument_list)
+
+
+def _profile_arguments(
+    example_module: ExampleModule, arguments: argparse.Namespace, example_id: str
+) -> dict:
+    """Forward the profile-only flags to examples that declare them.
+
+    Most examples take a device, a seed and an artifacts directory and nothing
+    else. Passing a dataset directory or a config override to one of those
+    would be a silent no-op at best, so a flag aimed at an example that cannot
+    honour it stops the run instead.
+
+    Args:
+        example_module: The imported example.
+        arguments: Parsed command line.
+        example_id: Registry id, named in the error.
+
+    Returns:
+        The keyword arguments to add to the ``run_experiment`` call.
+
+    Raises:
+        SystemExit: Code 1 when a flag was given to an example that cannot use it.
+    """
+    accepted = inspect.signature(example_module.run_experiment).parameters
+    forwarded: dict = {}
+    if arguments.mode is not None:
+        if "execution" not in accepted:
+            raise SystemExit(f"{example_id} does not accept execution modes")
+        from examples.pediatric_pneumonia._execution import ExecutionOptions
+
+        forwarded["execution"] = ExecutionOptions(
+            mode=arguments.mode,
+            protocol_lock_path=arguments.protocol_lock,
+            resume=arguments.resume,
+            lost_work_seconds=arguments.lost_work_seconds,
+        )
+    elif (
+        arguments.resume
+        or arguments.protocol_lock is not None
+        or arguments.lost_work_seconds is not None
+    ):
+        raise SystemExit("--resume, --protocol-lock and --lost-work-seconds require --mode")
+    for name, value in (
+        ("data_directory", arguments.data_directory),
+        ("config_file_path", arguments.config),
+    ):
+        if value is None:
+            continue
+        if name not in accepted:
+            flag = "--" + name.replace("_file_path", "").replace("_", "-")
+            print(
+                f"error: {example_id} does not accept {flag}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        forwarded[name] = value
+    return forwarded
 
 
 def _artifacts_directory_for_seed(
@@ -76,9 +155,7 @@ def _artifacts_directory_for_seed(
     """
     if artifacts_root is None:
         return None
-    seed_directory = (
-        artifacts_root / example_id.replace("/", "_") / f"seed_{evolution_seed}"
-    )
+    seed_directory = artifacts_root / example_id.replace("/", "_") / f"seed_{evolution_seed}"
     seed_directory.mkdir(parents=True, exist_ok=True)
     return seed_directory
 
@@ -103,6 +180,8 @@ def _summarize_runs(run_records: list[dict]) -> dict[str, dict[str, float]]:
 
 def main(argument_list: list[str] | None = None) -> None:
     arguments = _parse_arguments(argument_list)
+    if arguments.repeats < 1:
+        raise SystemExit("--repeats must be positive")
     if arguments.example_id not in EXAMPLE_REGISTRY:
         valid_ids = ", ".join(sorted(EXAMPLE_REGISTRY))
         print(
@@ -115,7 +194,8 @@ def main(argument_list: list[str] | None = None) -> None:
     example_module = cast(
         ExampleModule, _import_example_module(EXAMPLE_REGISTRY[arguments.example_id])
     )
-    config_file_path = example_module.CONFIG_FILE_PATH
+    profile_arguments = _profile_arguments(example_module, arguments, arguments.example_id)
+    config_file_path = arguments.config or example_module.CONFIG_FILE_PATH
     config_text = config_file_path.read_text(encoding="utf-8")
 
     run_records: list[dict] = []
@@ -132,6 +212,7 @@ def main(argument_list: list[str] | None = None) -> None:
             device=device,
             random_seed=evolution_seed,
             artifacts_directory=seed_artifacts_directory,
+            **profile_arguments,
         )
         run_record = {
             "seed": evolution_seed,
@@ -151,7 +232,7 @@ def main(argument_list: list[str] | None = None) -> None:
         print(f"Run result: {json.dumps(run_record)}")
 
     summary = _summarize_runs(run_records)
-    
+
     try:
         config_file_value = config_file_path.relative_to(_REPOSITORY_ROOT).as_posix()
     except ValueError:
