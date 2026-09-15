@@ -29,6 +29,7 @@ from typing import Any
 
 import yaml
 
+from examples._benchmark.execution import ExecutionLockError
 from polyneat.logging_utils.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -116,8 +117,11 @@ _PLACEHOLDER_STRINGS: frozenset[str] = frozenset(
 )
 
 
-class ProtocolLockError(RuntimeError):
-    """Raised when the protocol lock is missing, incomplete or does not match."""
+# The pneumonia lock and the shared benchmark executor report the same kind of
+# failure - a run leaving what was frozen - so they share one exception type.
+# An error raised deep in the shared executor is then the very exception the
+# pneumonia code raises and its tests catch.
+ProtocolLockError = ExecutionLockError
 
 
 @dataclass(frozen=True)

@@ -1,18 +1,13 @@
-"""Fitness by AUROC on a validation split, for trained and pretrained phenotypes.
+"""Fitness by top-1 accuracy on a validation split, for the digit and object tasks.
 
-Two evaluators, because the two algorithms this benchmark compares learn in
-genuinely different places. DeepNEAT carries no weights in its genome, so every
-evaluation trains a fresh network and the training belongs in the evaluator.
-EXACT is Lamarckian and trains between generations, so by the time its
-phenotype reaches an evaluator it is already trained and must only be scored.
-Forcing one class to do both would mean a flag deciding whether training
-happens, which is exactly the kind of hidden branch the protocol asks to avoid.
-
-The metric-neutral bookkeeping - budgets, failure taxonomy, best-model
-snapshots, resumable state - lives in
-:mod:`polyneat.evaluators.scored_candidate_evaluator` and is shared with the
-multi-class accuracy evaluator. This module adds only the binary AUROC scoring
-on a validation split, and the two ways of reaching it.
+The counterpart of :mod:`polyneat.evaluators.binary_auroc_evaluator` for the
+MNIST and CIFAR benchmarks, where the label is one of many classes and AUROC
+does not apply. Everything except the metric - budgets, the failure taxonomy,
+the best-model snapshot, the resumable state, the split between a method that
+trains before scoring and one that only scores - is inherited unchanged from
+:class:`~polyneat.evaluators.scored_candidate_evaluator.ScoredCandidateEvaluatorBase`.
+Only the scoring here is different: a batched forward pass, an argmax, and the
+fraction that matches the label.
 """
 
 from __future__ import annotations
@@ -24,8 +19,7 @@ from dataclasses import dataclass
 import torch
 
 from polyneat.core.component_protocols import Phenotype
-from polyneat.evaluators.binary_classification_metrics import MetricInputError, compute_auroc
-from polyneat.evaluators.binary_inference import predict_binary
+from polyneat.evaluators.binary_classification_metrics import MetricInputError
 from polyneat.evaluators.binary_predictions import NonFinitePredictionError
 from polyneat.evaluators.scored_candidate_evaluator import (
     ScoredCandidateEvaluatorBase,
@@ -44,37 +38,85 @@ from polyneat.runner.evaluation_record import EvaluationRecord, EvaluationStatus
 from polyneat.training.image_preprocessing import ImagePreprocessor
 from polyneat.training.random_streams import TrainingRandomStreams
 from polyneat.training.supervised_trainer import COMPLETED, SupervisedTrainer
+from polyneat.training.trainable_model import TrainableModel, move_model_to_device
 
 logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
-class ValidationSplit:
-    """The split a candidate's fitness is measured on.
+class AccuracyValidationSplit:
+    """The split a candidate's accuracy is measured on.
+
+    Unlike the binary split it carries no group ids: the multi-class benchmarks
+    report a point accuracy, not a grouped bootstrap, so there is nothing to
+    resample by.
 
     Attributes:
         images: ``NCHW`` batch, unpreprocessed.
         labels: Long tensor of class indices.
-        example_ids: Manifest ids, aligned with the rows.
-        group_ids: Split groups, aligned with the rows.
-        split_name: Name of the split, recorded in every prediction set so a
-            fitness computed on the wrong split is visible in the artifact.
+        split_name: Name of the split, recorded for provenance.
     """
 
     images: torch.Tensor
     labels: torch.Tensor
-    example_ids: tuple[str, ...]
-    group_ids: tuple[str, ...]
     split_name: str
 
 
-class _BinaryAurocEvaluatorBase(ScoredCandidateEvaluatorBase):
-    """Binary AUROC scoring on top of the shared candidate bookkeeping."""
+def validation_top1_accuracy(
+    model: TrainableModel,
+    *,
+    images: torch.Tensor,
+    labels: torch.Tensor,
+    preprocessor: ImagePreprocessor,
+    batch_size: int,
+    device_for_computation: torch.device,
+) -> float:
+    """Top-1 accuracy of one runnable model on a labelled split.
+
+    Args:
+        model: A model satisfying the trainable-model contract.
+        images: ``NCHW`` batch, unpreprocessed.
+        labels: Long tensor of class indices, aligned with ``images``.
+        preprocessor: The model's fitted preprocessing, applied with
+            ``training=False`` so no augmentation runs and nothing is fitted.
+        batch_size: Rows per forward pass.
+        device_for_computation: Device to run on.
+
+    Returns:
+        The fraction of rows whose argmax logit equals the label.
+
+    Raises:
+        MetricInputError: If the split is empty.
+        NonFinitePredictionError: If the model emits a non-finite logit.
+    """
+    total = int(labels.shape[0])
+    if total == 0:
+        raise MetricInputError("cannot score accuracy on an empty validation split")
+    model = move_model_to_device(model, device_for_computation)
+    model.eval()
+    correct = 0
+    with torch.no_grad():
+        for batch_start in range(0, total, batch_size):
+            batch_images = images[batch_start : batch_start + batch_size].to(device_for_computation)
+            preprocessed = preprocessor.apply(batch_images, training=False)
+            logits = model.forward_pass(preprocessed)
+            if not bool(torch.isfinite(logits).all()):
+                raise NonFinitePredictionError(
+                    "the model emitted a non-finite logit during accuracy scoring"
+                )
+            predicted = logits.argmax(dim=1).detach().cpu()
+            batch_labels = labels[batch_start : batch_start + batch_size].detach().cpu()
+            correct += int((predicted == batch_labels).sum())
+    return correct / total
+
+
+class _MulticlassAccuracyEvaluatorBase(ScoredCandidateEvaluatorBase):
+    """Top-1 accuracy scoring on top of the shared candidate bookkeeping."""
 
     def __init__(
         self,
         *,
-        validation: ValidationSplit,
+        validation: AccuracyValidationSplit,
         preprocessor: ImagePreprocessor,
         **base_arguments,
     ) -> None:
@@ -82,47 +124,32 @@ class _BinaryAurocEvaluatorBase(ScoredCandidateEvaluatorBase):
 
         Args:
             validation: Split the fitness is measured on. For the search stage
-                this is ``search_validation`` and nothing else.
+                this is the fixed validation split and nothing else.
             preprocessor: Already-fitted image path. Inference never fits it.
             **base_arguments: Device, batch size, budget and stage, passed to
-                :class:`~polyneat.evaluators.scored_candidate_evaluator
-                .ScoredCandidateEvaluatorBase`.
+                the shared base.
         """
         super().__init__(**base_arguments)
         self._validation = validation
         self._preprocessor = preprocessor
 
     def _score_phenotype(self, phenotype: Phenotype, evaluation_id: str) -> float:
-        """AUROC of one phenotype on the validation split.
-
-        Raises:
-            NonFinitePredictionError: If the model emitted NaN or Inf.
-            MetricInputError: If the split cannot support a ranking metric.
-        """
-        predictions = predict_binary(
+        return validation_top1_accuracy(
             _as_trainable_model(phenotype),
             images=self._validation.images,
             labels=self._validation.labels,
-            example_ids=self._validation.example_ids,
-            group_ids=self._validation.group_ids,
             preprocessor=self._preprocessor,
             batch_size=self._inference_batch_size,
             device_for_computation=self._device_for_computation,
-            model_id=evaluation_id,
-            stage=self._stage,
-            split_name=self._validation.split_name,
         )
-        return compute_auroc(predictions.labels, predictions.positive_class_probabilities)
 
 
-class PretrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
+class PretrainedMulticlassAccuracyEvaluator(_MulticlassAccuracyEvaluatorBase):
     """Scores a phenotype that its algorithm already trained.
 
-    This is EXACT's evaluator. EXACT writes trained kernels back into the
-    genotype between generations, so by the time a phenotype reaches fitness
-    evaluation it carries the weights it learned. Training it again here would
-    add an unbudgeted training pass that the published algorithm does not
-    perform.
+    EXACT's evaluator on the multi-class tasks: it writes trained kernels back
+    into the genotype between generations, so its phenotype arrives trained and
+    is only scored here.
     """
 
     def _evaluate_one(self, phenotype: Phenotype, evaluation_id: str) -> EvaluationRecord:
@@ -133,19 +160,11 @@ class PretrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
         evaluation_started_at = time.perf_counter()
         try:
             fitness = self._score_phenotype(phenotype, evaluation_id)
-        except NonFinitePredictionError as non_finite_error:
+        except (NonFinitePredictionError, MetricInputError) as scoring_error:
             return EvaluationRecord(
                 evaluation_id=evaluation_id,
                 status=EvaluationStatus.FAILED_NON_FINITE,
-                failure_reason=str(non_finite_error),
-                wall_clock_seconds=time.perf_counter() - evaluation_started_at,
-                parameter_count=_count_parameters(phenotype),
-            )
-        except MetricInputError as metric_error:
-            return EvaluationRecord(
-                evaluation_id=evaluation_id,
-                status=EvaluationStatus.FAILED_NON_FINITE,
-                failure_reason=str(metric_error),
+                failure_reason=str(scoring_error),
                 wall_clock_seconds=time.perf_counter() - evaluation_started_at,
                 parameter_count=_count_parameters(phenotype),
             )
@@ -171,20 +190,13 @@ class PretrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
         )
 
 
-class TrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
-    """Trains each phenotype from scratch, then scores it by validation AUROC.
+class TrainedMulticlassAccuracyEvaluator(_MulticlassAccuracyEvaluatorBase):
+    """Trains each phenotype from scratch, then scores it by validation accuracy.
 
-    This is the evaluator for the algorithms whose genome carries no weights:
-    DeepNEAT, the random search over DeepNEAT's space, and the fixed CNN
-    baseline. Every candidate gets fresh parameters drawn from its own
-    initialization stream, a weighted cross-entropy against the class balance
-    of the training split, and the shared augmentation - so no candidate can
-    gain an advantage from where it happened to sit in the population.
-
-    Trained weights are never written back into a genome. A snapshot of the
-    best candidate is kept, because the checkpoint that earned the selected
-    fitness is the model track A reports on, and decoding the genome again
-    would not reproduce it.
+    The evaluator for the weightless-genome methods on the multi-class tasks:
+    DeepNEAT and the random search over its space. Every candidate gets fresh
+    parameters from its own initialization stream and the shared training
+    recipe, so no candidate gains an advantage from its population position.
     """
 
     def __init__(
@@ -202,15 +214,11 @@ class TrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
         Args:
             train_images: Training images for candidate training.
             train_labels: Their class indices.
-            trainer: The shared trainer, already carrying the recipe, the
-                fitted preprocessing and the class weights.
-            root_seed: Root of the per-candidate random streams. Every candidate
-                derives its own initialization, batch order and augmentation
-                from it and its evaluation id, so the streams do not depend on
-                population position or on model size.
+            trainer: The shared trainer, already carrying the recipe, the fitted
+                preprocessing and the class weights.
+            root_seed: Root of the per-candidate random streams.
             reinitializer: How to give a candidate fresh parameters. Defaults to
-                calling the phenotype's own ``reinitialize_parameters``, which is
-                what DeepNEAT phenotypes provide.
+                the phenotype's own ``reinitialize_parameters``.
             **base_arguments: Passed through to the shared base.
         """
         super().__init__(**base_arguments)
@@ -254,11 +262,11 @@ class TrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
                     examples_processed=training_result.examples_processed,
                 )
             fitness = self._score_phenotype(phenotype, evaluation_id)
-        except (NonFinitePredictionError, MetricInputError) as non_finite_error:
+        except (NonFinitePredictionError, MetricInputError) as scoring_error:
             return EvaluationRecord(
                 evaluation_id=evaluation_id,
                 status=EvaluationStatus.FAILED_NON_FINITE,
-                failure_reason=str(non_finite_error),
+                failure_reason=str(scoring_error),
                 wall_clock_seconds=time.perf_counter() - evaluation_started_at,
                 parameter_count=parameter_count,
             )
@@ -290,20 +298,14 @@ class TrainedBinaryAurocEvaluator(_BinaryAurocEvaluatorBase):
 def _reinitialize_with_phenotype_method(phenotype: Phenotype, generator: torch.Generator) -> None:
     """Reinitialize through the phenotype's own method, seeding it explicitly.
 
-    A phenotype that owns an initialization scheme keeps it - DeepNEAT evolves a
-    weight-scaling gene, and track A must respect that gene. The generator is
-    still the source of the draws, so the stream stays independent of anything
-    else the process did.
-
     Raises:
-        TypeError: If the phenotype cannot reinitialize itself. Training a
-            candidate that silently kept a previous candidate's weights would
-            make every fitness after the first meaningless.
+        TypeError: If the phenotype cannot reinitialize itself, which would let
+            a candidate silently keep a previous candidate's weights.
     """
     reinitialize = getattr(phenotype, "reinitialize_parameters", None)
     if not callable(reinitialize):
         raise TypeError(
-            "TrainedBinaryAurocEvaluator needs phenotypes that implement "
+            "TrainedMulticlassAccuracyEvaluator needs phenotypes that implement "
             "reinitialize_parameters() so each candidate really starts from its own stream"
         )
     seed = int(torch.randint(0, 2**62, (1,), generator=generator).item())

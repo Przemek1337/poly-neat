@@ -1,0 +1,84 @@
+# Smoke profile: DeepNEAT on the MNIST comparison protocol.
+#
+# A plumbing check, not a measurement. A tiny population evolved for two
+# generations over a few hundred digits proves the whole path holds - the
+# resumable search, both tracks, the checkpoint round-trip, the held-out test -
+# without standing for any result. The extra preprocessing genes are pinned to
+# neutral, because the shared image path already pads, resizes, augments and
+# standardizes each batch exactly once, and a genome adding a second such step
+# would process the batch twice.
+protocol:
+  protocol_id: mnist-benchmark-smoke-v1
+  dataset_release: mnist/official
+  dataset_license: mnist-yann-lecun-cc-by-sa-3.0
+  image_side: 28
+  split_seed: 11
+  validation_fraction: 0.2
+  search_seed: 101
+  retraining_seeds: [201]
+  inference_batch_size: 64
+  maximum_phenotype_parameters: 5000000
+  maximum_training_samples: 240
+  maximum_test_samples: 120
+  uses_augmentation: true
+
+search:
+  number_of_generations: 2
+
+algorithm:
+  population_size: 4
+  number_of_input_nodes: 1
+  number_of_output_nodes: 10
+  number_of_classes: 10
+  random_seed: 101
+  device_for_phenotype_evaluation: cpu
+
+  input_image_channels: 1
+  input_image_height: 28
+  input_image_width: 28
+
+  available_filter_counts: [4, 8]
+  available_kernel_sizes: [3]
+  available_dense_unit_counts: [16, 32]
+  dropout_rate_min: 0.0
+  dropout_rate_max: 0.3
+
+  probability_of_add_layer_node_mutation: 0.3
+  probability_of_add_tensor_edge_mutation: 0.2
+  probability_of_toggle_tensor_edge_mutation: 0.05
+  probability_of_layer_hyperparameter_mutation: 0.5
+  probability_of_new_conv_layer: 0.8
+
+  # Blocked preprocessing genes: the shared path owns preprocessing.
+  global_cropped_image_size_min: 0
+  global_cropped_image_size_max: 0
+  global_spatial_scaling_min: 0.0
+  global_spatial_scaling_max: 0.0
+  available_horizontal_flip_options: [false]
+  available_variance_normalization_options: [false]
+  global_hue_shift_degrees_min: 0.0
+  global_hue_shift_degrees_max: 0.0
+  global_saturation_value_shift_min: 0.0
+  global_saturation_value_shift_max: 0.0
+  global_saturation_value_scale_min: 0.0
+  global_saturation_value_scale_max: 0.0
+
+  maximum_total_parameter_count: 5000000
+
+candidate_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 2
+  schedule: cosine
+  minimum_learning_rate: 0.0005
+
+track_b_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 2
+  schedule: cosine
+  minimum_learning_rate: 0.0005

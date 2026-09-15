@@ -25,8 +25,9 @@ from pathlib import Path
 import torch
 import yaml
 
-from examples._example_cli import add_device_arguments, resolve_device
-from examples._experiment import ExperimentReport, print_experiment_report
+from examples._benchmark.cli import parse_profile_cli as _shared_parse_profile_cli
+from examples._benchmark.cli import run_profile_main as _shared_run_profile_main
+from examples._experiment import ExperimentReport
 from examples.pediatric_pneumonia._execution import ExecutionOptions, validate_execution_lock
 from examples.pediatric_pneumonia._protocol import (
     BenchmarkSettings,
@@ -47,6 +48,9 @@ logger = get_logger(__name__)
 
 class ProfileDataError(RuntimeError):
     """Raised when a profile cannot be given the archive it requires."""
+
+
+_PROFILE_DESCRIPTION = "PolyNEAT pediatric pneumonia profile"
 
 
 CONFIGS_DIRECTORY = Path(__file__).parent / "configs"
@@ -283,103 +287,23 @@ def run_profile_main(
     artifacts_directory: Path,
     argument_list: list[str] | None = None,
 ) -> None:
-    """Parse the command line, run one profile and print its report.
-
-    Shared by all five entry points so the flags, the artifact location and the
-    handling of a missing archive stay identical between methods.
-
-    Args:
-        run_experiment: The profile's own ``run_experiment``.
-        default_config_file_path: Used when ``--config`` is not given.
-        artifacts_directory: Where this profile writes its artifacts.
-        argument_list: Arguments to parse instead of ``sys.argv[1:]``.
-
-    Raises:
-        SystemExit: Code 1 when a full profile was given no data directory, so
-            the command line reports the mistake instead of a traceback.
-    """
-    device, data_directory, config_file_path, options = parse_profile_cli(
-        argument_list, default_config_file_path=default_config_file_path
+    """Run one pneumonia profile from the command line via the shared spine."""
+    _shared_run_profile_main(
+        run_experiment,
+        default_config_file_path=default_config_file_path,
+        artifacts_directory=artifacts_directory,
+        description=_PROFILE_DESCRIPTION,
+        expected_errors=(ProfileDataError, ProtocolLockError),
+        argument_list=argument_list,
     )
-    try:
-        report = run_experiment(
-            device=device,
-            artifacts_directory=options.artifacts_directory or artifacts_directory,
-            data_directory=data_directory,
-            config_file_path=config_file_path,
-            random_seed=options.seed,
-            execution=(
-                None
-                if options.mode is None
-                else ExecutionOptions(
-                    mode=options.mode,
-                    protocol_lock_path=options.protocol_lock,
-                    resume=options.resume,
-                    lost_work_seconds=options.lost_work_seconds,
-                )
-            ),
-        )
-    except (ProfileDataError, ProtocolLockError) as error:
-        logger.error("%s", error)
-        raise SystemExit(1) from error
-    print_experiment_report(report)
 
 
 def parse_profile_cli(
     argument_list: list[str] | None = None, *, default_config_file_path: Path
 ) -> tuple[torch.device | None, Path | None, Path, argparse.Namespace]:
-    """Parse the flags every pneumonia profile accepts.
-
-    On top of ``--cpu``/``--gpu`` shared with every other example, a profile
-    takes the archive to run against and the yaml that defines the run, so one
-    entry point per method covers both the smoke fixture and the real series.
-
-    Args:
-        argument_list: Arguments to parse instead of ``sys.argv[1:]``.
-        default_config_file_path: The profile's own yaml, used when ``--config``
-            is not given.
-
-    Returns:
-        ``(device, data_directory, config_file_path, execution_arguments)``.
-
-    Raises:
-        SystemExit: Code 1 for ``--gpu`` without CUDA, code 2 for a malformed
-            command line.
-    """
-    parser = argparse.ArgumentParser(
-        description="PolyNEAT pediatric pneumonia profile", allow_abbrev=False
-    )
-    add_device_arguments(parser)
-    parser.add_argument(
-        "--data-directory",
-        type=Path,
-        default=None,
-        help="extracted Kaggle archive; required by full profiles",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help=f"profile yaml to run (default: {default_config_file_path.name})",
-    )
-    parser.add_argument("--mode", choices=("smoke", "pilot", "full"))
-    parser.add_argument("--protocol-lock", type=Path)
-    parser.add_argument("--artifacts-directory", type=Path)
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--lost-work-seconds", type=float)
-    parsed_arguments = parser.parse_args(argument_list)
-    if parsed_arguments.mode is None and (
-        parsed_arguments.resume
-        or parsed_arguments.protocol_lock is not None
-        or parsed_arguments.lost_work_seconds is not None
-    ):
-        parser.error("--resume, --protocol-lock and --lost-work-seconds require an explicit --mode")
-    if parsed_arguments.lost_work_seconds is not None and not parsed_arguments.resume:
-        parser.error("--lost-work-seconds requires --resume")
-    return (
-        resolve_device(parsed_arguments),
-        parsed_arguments.data_directory,
-        parsed_arguments.config or default_config_file_path,
-        parsed_arguments,
+    """Parse the pneumonia profile command line via the shared spine."""
+    return _shared_parse_profile_cli(
+        argument_list,
+        default_config_file_path=default_config_file_path,
+        description=_PROFILE_DESCRIPTION,
     )

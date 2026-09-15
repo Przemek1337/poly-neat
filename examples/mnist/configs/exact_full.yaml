@@ -1,0 +1,86 @@
+# Full profile: EXACT on the MNIST comparison protocol.
+#
+# NOT YET FROZEN. The wall-clock budget and generation cap below are inputs to
+# the pilot, not results of it: the pilot measures what one generation costs on
+# the target device and how many the budget buys, and only then are these frozen
+# into protocol.lock.yaml. A run started from this file before that is a pilot
+# run. EXACT is Lamarckian: it trains between
+# generations and writes the trained kernels back into the genotype, so its
+# evaluator only scores. MNIST is single-channel, which is exactly the input
+# EXACT was designed for, so nothing about the algorithm is bent to fit here.
+# The version used runs generationally, unlike the paper's distributed
+# volunteer-computing loop, and the report has to say so.
+protocol:
+  protocol_id: mnist-benchmark-full-v1
+  dataset_release: mnist/official
+  dataset_license: mnist-official-yann-lecun-terms
+  image_side: 28
+  split_seed: 20260915
+  validation_fraction: 0.2
+  search_seed: 101
+  retraining_seeds: [201, 202, 203]
+  inference_batch_size: 64
+  maximum_phenotype_parameters: 5000000
+  maximum_training_samples: null   # whole official training split
+  maximum_test_samples: null       # whole official test split
+  search_budget_seconds: 3600      # pilot: confirm against generation cost
+  uses_augmentation: true
+
+search:
+  number_of_generations: 40   # a cap; the wall-clock budget is what binds
+
+algorithm:
+  population_size: 20
+  number_of_input_nodes: 1
+  number_of_output_nodes: 10
+  random_seed: 101
+  device_for_phenotype_evaluation: cpu
+
+  input_image_height: 28
+  input_image_width: 28
+
+  initial_population_strategy: exact_minimal_cnn
+  number_of_mutations_per_genome: 2
+  probability_of_crossover_vs_mutation_only: 0.2
+  more_fit_parent_edge_inclusion_rate: 0.8
+  less_fit_parent_edge_inclusion_rate: 0.4
+  tournament_size_for_parent_selection: 1
+  use_epigenetic_weight_initialization: true
+  use_simplex_hyperparameter_optimization: false
+
+  number_of_training_epochs_per_genome: 4
+  training_batch_size: 64
+  velocity_reset_interval: 1000
+  input_dropout_probability: 0.0
+  hidden_dropout_probability: 0.0
+  use_batch_normalization: true
+  batch_normalization_alpha: 0.1
+  backpropagation_learning_rate: 0.0025
+  learning_rate_decay_factor: 0.95
+  minimum_learning_rate: 0.00001
+  backpropagation_momentum: 0.5
+  momentum_decay_factor: 0.95
+  maximum_momentum: 0.99
+  backpropagation_weight_decay: 0.0005
+  weight_decay_decay_factor: 0.95
+  minimum_weight_decay: 0.000001
+
+# Track A uses EXACT's own learning mechanism; this recipe is what the shared
+# trainer would apply and is recorded for comparability of the reported cost.
+candidate_recipe:
+  learning_rate: 0.0025
+  momentum: 0.5
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 8
+  schedule: constant
+  minimum_learning_rate: 0.00001
+
+track_b_recipe:
+  learning_rate: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+  batch_size: 64
+  number_of_epochs: 8
+  schedule: cosine
+  minimum_learning_rate: 0.0005
