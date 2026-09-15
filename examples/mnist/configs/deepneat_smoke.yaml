@@ -8,6 +8,7 @@
 # standardizes each batch exactly once, and a genome adding a second such step
 # would process the batch twice.
 protocol:
+  profile_kind: smoke
   protocol_id: mnist-benchmark-smoke-v1
   dataset_release: mnist/official
   dataset_license: mnist-yann-lecun-cc-by-sa-3.0

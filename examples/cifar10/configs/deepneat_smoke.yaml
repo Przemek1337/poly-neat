@@ -7,6 +7,7 @@
 # pinned to neutral because the shared image path already pads, resizes,
 # augments and standardizes each batch exactly once.
 protocol:
+  profile_kind: smoke
   protocol_id: cifar10-benchmark-smoke-v1
   dataset_release: cifar10/official
   dataset_license: cifar10-krizhevsky-2009-mit

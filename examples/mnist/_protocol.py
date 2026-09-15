@@ -53,8 +53,9 @@ __all__ = [
 def _load_mnist_dataset(
     settings: MulticlassBenchmarkSettings,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Load the official MNIST split as flat rows, without normalizing.
+    """Load the official MNIST split as flat rows in [0, 255].
 
+    The loader returns [0, 1], so restore the byte scale before quantization.
     Normalization is left to the shared preprocessing, which fits its statistics
     after the validation split is carved out, so no validation pixel touches the
     statistics the training split is standardized by.
@@ -67,9 +68,9 @@ def _load_mnist_dataset(
         standardize=False,
     )
     return (
-        dataset.train_features,
+        dataset.train_features * 255.0,
         dataset.train_labels,
-        dataset.test_features,
+        dataset.test_features * 255.0,
         dataset.test_labels,
     )
 

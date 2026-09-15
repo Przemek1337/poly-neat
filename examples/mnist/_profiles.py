@@ -17,6 +17,7 @@ import yaml
 
 from examples._benchmark.cli import parse_profile_cli as _shared_parse_profile_cli
 from examples._benchmark.cli import run_profile_main as _shared_run_profile_main
+from examples._benchmark.execution import resolve_profile_execution
 from examples._experiment import ExperimentReport
 from examples.mnist._execution import (
     ExecutionLockError,
@@ -68,7 +69,7 @@ def load_profile_settings(
     """Read one MNIST profile yaml into :class:`MnistBenchmarkSettings`."""
     payload = yaml.safe_load(config_file_path.read_text(encoding="utf-8"))
     protocol = payload["protocol"]
-    execution = execution or ExecutionOptions(mode="smoke")
+    execution = resolve_profile_execution(protocol, execution)
     return MnistBenchmarkSettings(
         protocol_id=protocol["protocol_id"],
         dataset_release=protocol["dataset_release"],

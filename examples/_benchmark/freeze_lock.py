@@ -87,6 +87,8 @@ def assemble_series_lock(
     }
     reference = profiles[methods[0]]
     for name, profile in profiles.items():
+        if profile["protocol"].get("profile_kind") == "smoke":
+            raise ExecutionLockError("cannot freeze a smoke profile as a result series")
         for key in _COMMON_PROTOCOL_FIELDS:
             if profile["protocol"].get(key) != reference["protocol"].get(key):
                 raise ExecutionLockError(f"inconsistent common protocol field: {name}/{key}")

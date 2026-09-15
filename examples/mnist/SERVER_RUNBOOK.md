@@ -1,5 +1,22 @@
 # MNIST benchmark — server runbook
 
+## Compatibility after the protocol fixes
+
+Repeat pilots and create new locks after updating: earlier MNIST runs lost gray
+levels during conversion and cannot be used as results for this corrected protocol.
+Old checkpoints/locks are intentionally incompatible with the corrected code and
+content-based data identity. Preserve them separately; use new artifact directories.
+
+Only profiles declaring `protocol.profile_kind: smoke` default to smoke. Other
+profiles default to pilot; an explicit `--mode smoke` on a result profile is rejected.
+Completed `--resume` runs validate data, configuration, environment and lock, then
+return the saved report without retraining or rescoring. Interrupted track B may
+still restart. Search-resume equivalence is tested under controlled CPU conditions,
+not guaranteed bit-for-bit across GPU hardware.
+
+The data fingerprint includes pixels, labels and split order; provenance names
+are separate, so confirming the release/license during freeze does not alter it.
+
 The DeepNEAT vs EXACT comparison on MNIST, run on the GPU box in five stages:
 **smoke → pilot → freeze → seed series → resume**. MNIST is single-channel, the
 input EXACT was designed for, so neither algorithm is bent to fit; the color
@@ -108,9 +125,9 @@ uv run python -m examples.mnist.benchmark_deepneat --gpu --mode full \
     --resume --lost-work-seconds 240
 ```
 
-Resume reproduces the run bit for bit: the interrupted search selects the same
-model it would have selected uninterrupted, which the test suite checks for both
-algorithms.
+Under controlled CPU conditions, the tests verify that interrupted searches
+select the same model as uninterrupted ones for both algorithms. This is not
+a guarantee of bit-for-bit equivalence across GPU hardware.
 
 ## What this comparison is and is not
 

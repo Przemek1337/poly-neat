@@ -75,6 +75,19 @@ def canonical_digest(payload: dict) -> str:
     ).hexdigest()
 
 
+def resolve_profile_execution(
+    protocol: dict, execution: ExecutionOptions | None
+) -> ExecutionOptions:
+    """Only explicitly designated smoke profiles may evaluate without a lock."""
+    is_smoke = protocol.get("profile_kind") == "smoke"
+    resolved = execution or ExecutionOptions(mode="smoke" if is_smoke else "pilot")
+    if resolved.mode == "smoke" and not is_smoke:
+        raise ExecutionLockError("smoke requires a smoke profile; use pilot for result profiles")
+    if resolved.mode != "smoke" and is_smoke:
+        raise ExecutionLockError("pilot/full requires a non-smoke profile")
+    return resolved
+
+
 def execution_environment(
     device: torch.device,
     *,

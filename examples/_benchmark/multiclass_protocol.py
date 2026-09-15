@@ -16,16 +16,17 @@ genuinely its own: which dataset to load and which libraries to pin.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import torch
 from torch import nn
 
-from examples._benchmark.execution import ExecutionOptions, canonical_digest
+from examples._benchmark.execution import ExecutionLockError, ExecutionOptions, canonical_digest
 from examples._experiment import ExperimentReport
 from polyneat.evaluators.multiclass_accuracy_evaluator import (
     AccuracyValidationSplit,
@@ -56,9 +57,9 @@ TRACK_B = "track_b"
 
 # A loader returns the official split as (train_features, train_labels,
 # test_features, test_labels), each a CPU tensor; features are flat rows.
-DatasetLoader = Callable[["MulticlassBenchmarkSettings"], tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-]]
+DatasetLoader = Callable[
+    ["MulticlassBenchmarkSettings"], tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+]
 EnvironmentFunction = Callable[[torch.device], dict]
 
 
@@ -196,10 +197,10 @@ SearchCallable = Callable[[SearchContext], SelectedCandidate]
 
 
 def _dataset_identity(settings: MulticlassBenchmarkSettings, prepared: dict) -> str:
-    """Digest the dataset release and split so a changed split invalidates a lock."""
+    """Bind actual data and split, independently of editable provenance labels."""
     return canonical_digest(
         {
-            "dataset_release": settings.dataset_release,
+            "identity_schema": "content-v2",
             "image_side": settings.image_side,
             "channels": settings.channels,
             "number_of_classes": settings.number_of_classes,
@@ -212,9 +213,16 @@ def _dataset_identity(settings: MulticlassBenchmarkSettings, prepared: dict) -> 
     )
 
 
-def to_uint8_images(
-    features: torch.Tensor, *, channels: int, image_side: int
-) -> torch.Tensor:
+def _tensor_digest(tensor: torch.Tensor) -> str:
+    """Hash typed, ordered CPU tensor contents without copying a large byte string."""
+    array = tensor.detach().cpu().contiguous().numpy()
+    digest = hashlib.sha256()
+    digest.update(canonical_digest({"shape": list(array.shape), "dtype": array.dtype.str}).encode())
+    digest.update(array.data.cast("B"))
+    return digest.hexdigest()
+
+
+def to_uint8_images(features: torch.Tensor, *, channels: int, image_side: int) -> torch.Tensor:
     """Reshape flat rows to ``(n, channels, side, side)`` uint8 in ``[0, 255]``.
 
     Loaders hand back flat rows scaled to ``[0, 255]``; the shared preprocessing
@@ -269,6 +277,12 @@ def prepare_data(
             "train_rows": int(train_split.images.shape[0]),
             "validation_rows": int(validation_split.images.shape[0]),
             "test_rows": int(test_split.images.shape[0]),
+            "official_train_images": _tensor_digest(train_images),
+            "official_train_labels": _tensor_digest(train_labels),
+            "official_test_images": _tensor_digest(test_images),
+            "official_test_labels": _tensor_digest(test_labels),
+            "train_indices": _tensor_digest(train_indices),
+            "validation_indices": _tensor_digest(validation_indices),
         },
     )
     return PreparedData(
@@ -354,9 +368,7 @@ def run_search_stage(
         train=data.train,
         search_validation=data.validation,
         preprocessor=preprocessor,
-        class_weights=compute_balanced_class_weights(
-            data.train.labels, settings.number_of_classes
-        ),
+        class_weights=compute_balanced_class_weights(data.train.labels, settings.number_of_classes),
         device_for_computation=settings.device_for_computation,
         root_seed=settings.search_seed,
         candidate_recipe=settings.candidate_recipe,
@@ -508,9 +520,34 @@ def run_multiclass_protocol(
     the test would spend the one measurement the full run is for.
     """
     experiment_started_at = time.perf_counter()
+    if settings.execution.mode == "full" and (
+        artifacts_directory is None or lock_sha256 == "unlocked"
+    ):
+        raise ExecutionLockError("full requires an artifacts directory and a validated lock")
     data = prepare_data(settings, load_dataset=load_dataset)
     if artifacts_directory is not None:
         artifacts_directory.mkdir(parents=True, exist_ok=True)
+        report_path = artifacts_directory / "run_report.json"
+        if report_path.exists():
+            if not settings.execution.resume:
+                raise ExecutionLockError("completed run exists; use resume or a new directory")
+            previous = json.loads(report_path.read_text(encoding="utf-8"))
+            if (
+                previous.get("effective_configuration")
+                != effective_configuration(settings, method_name)
+                or previous.get("dataset_identity_sha256") != data.dataset_identity_sha256
+                or previous.get("environment") != environment(settings.device_for_computation)
+                or previous.get("protocol_lock_sha256") != lock_sha256
+            ):
+                raise ExecutionLockError(
+                    "completed run differs in configuration, data, environment or lock"
+                )
+            summary = previous.get("summary", {})
+            if "runtime_seconds" not in summary or "number_of_generations" not in summary:
+                raise ExecutionLockError(
+                    "legacy completed report cannot be resumed; use a new directory"
+                )
+            return ExperimentReport(**summary)
 
     selected, track_a_preprocessor = run_search_stage(
         settings,
@@ -576,6 +613,7 @@ def run_multiclass_protocol(
         environment=environment,
         artifacts_directory=artifacts_directory,
         experiment_started_at=experiment_started_at,
+        lock_sha256=lock_sha256,
     )
 
 
@@ -590,6 +628,7 @@ def _build_report(
     environment: EnvironmentFunction,
     artifacts_directory: Path | None,
     experiment_started_at: float,
+    lock_sha256: str,
 ) -> ExperimentReport:
     """Assemble the report from the selection and the (optional) test results."""
     metric_values: dict[str, float] = {
@@ -618,6 +657,18 @@ def _build_report(
     )
 
     configuration = effective_configuration(settings, method_name)
+    report = ExperimentReport(
+        metric_values=metric_values,
+        number_of_generations=selected.number_of_generations,
+        runtime_seconds=time.perf_counter() - experiment_started_at,
+        effective_configuration=configuration,
+        artifact_paths={}
+        if artifacts_directory is None
+        else {
+            "run_report": (artifacts_directory / "run_report.json").as_posix(),
+            "checkpoints": (artifacts_directory / "checkpoints").as_posix(),
+        },
+    )
     if artifacts_directory is not None:
         _write_run_report(
             artifacts_directory,
@@ -626,6 +677,7 @@ def _build_report(
                 "mode": settings.execution.mode,
                 "protocol_id": settings.protocol_id,
                 "dataset_identity_sha256": data.dataset_identity_sha256,
+                "protocol_lock_sha256": lock_sha256,
                 "environment": environment(settings.device_for_computation),
                 "evaluation_status_counts": evaluation_status_counts,
                 "evaluation_records": [
@@ -640,30 +692,19 @@ def _build_report(
                     for frozen in frozen_models
                 },
                 "official_test": test_results,
-                "summary": {"metric_values": metric_values},
+                "summary": asdict(report),
                 "effective_configuration": configuration,
             },
         )
 
-    return ExperimentReport(
-        metric_values=metric_values,
-        number_of_generations=selected.number_of_generations,
-        runtime_seconds=time.perf_counter() - experiment_started_at,
-        effective_configuration=configuration,
-        artifact_paths=(
-            {}
-            if artifacts_directory is None
-            else {
-                "run_report": (artifacts_directory / "run_report.json").as_posix(),
-                "checkpoints": (artifacts_directory / "checkpoints").as_posix(),
-            }
-        ),
-    )
+    return report
 
 
 def _write_run_report(artifacts_directory: Path, payload: dict) -> None:
     """Write the run report next to the checkpoints."""
     artifacts_directory.mkdir(parents=True, exist_ok=True)
-    (artifacts_directory / "run_report.json").write_text(
+    temporary = artifacts_directory / "run_report.partial"
+    temporary.write_text(
         json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
     )
+    temporary.replace(artifacts_directory / "run_report.json")

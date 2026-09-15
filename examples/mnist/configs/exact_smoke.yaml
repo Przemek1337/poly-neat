@@ -7,6 +7,7 @@
 # The version used runs generationally, unlike the paper's distributed
 # volunteer-computing loop, and the report has to say so.
 protocol:
+  profile_kind: smoke
   protocol_id: mnist-benchmark-smoke-v1
   dataset_release: mnist/official
   dataset_license: mnist-yann-lecun-cc-by-sa-3.0

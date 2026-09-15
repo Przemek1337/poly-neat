@@ -1,5 +1,14 @@
 # CIFAR-10 benchmark — server runbook
 
+After the protocol fixes, repeat pilots and create new locks in new directories.
+Old checkpoints/locks are incompatible with the corrected code and content-based
+dataset identity. Only profiles declaring `protocol.profile_kind: smoke` may run
+in smoke mode; result profiles default to pilot when no mode is given.
+
+Completed `--resume` runs validate data, configuration, environment and lock and
+return the saved report without retraining or rescoring. Dataset fingerprints
+cover pixels, labels and split order, independently of release/license labels.
+
 The **additional colour experiment**: DeepNEAT on CIFAR-10, run on the GPU box
 in the same stages as the MNIST comparison — **smoke → pilot → freeze → seed
 series → resume**. CIFAR runs **DeepNEAT only**: EXACT is single-channel by
@@ -70,7 +79,9 @@ error, parameter count, wall-clock time and the failed-evaluation fraction.
 
 Re-run the same command with `--resume`; after an unclean stop add
 `--lost-work-seconds <n>` from the scheduler or logs so the budget stays honest.
-Resume reproduces the run bit for bit, which the test suite checks.
+Search resume is tested for equivalence under controlled CPU conditions; this
+does not promise bit-for-bit equivalence across GPU hardware. Interrupted track B
+may restart.
 
 ## What this is and is not
 
