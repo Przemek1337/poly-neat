@@ -15,10 +15,25 @@ import numpy as np
 
 from polyneat.core.component_protocols import Genome, NeuroevolutionAlgorithm, Phenotype
 from polyneat.core.population import Population
+from polyneat.logging_utils.custom_logger import get_logger
 from polyneat.runner.evaluation_record import EvaluationRecord
 from polyneat.runner.evolution_runner import NoSuccessfulEvaluationError
 from polyneat.runner.run_checkpoint import SupportsEvolutionStateExport
 from polyneat.runner.search_session import SearchSession
+
+logger = get_logger(__name__)
+
+
+def _budget_note(session: SearchSession) -> str:
+    """A short ', <n>s used' when a wall-clock budget is bounding the search.
+
+    The search evaluators are otherwise silent per candidate, so a run against a
+    long budget looks dead for minutes. This makes each candidate and each
+    generation visible, including how much of the budget has been consumed.
+    """
+    if session.budget is None:
+        return ""
+    return f", {session.budget.consumed_seconds:.0f}s used"
 
 
 class StatefulAlgorithm(NeuroevolutionAlgorithm, SupportsEvolutionStateExport, Protocol):
@@ -134,10 +149,27 @@ def run_resumable_evolution(
             ):
                 best_genome = population.genomes[position]
                 best_fitness, best_size = value, record.parameter_count
+            logger.info(
+                "gen %d cand %d/%d: %s%s, %d params%s",
+                population.generation_number,
+                position,
+                len(population.genomes),
+                record.status.value,
+                "" if value is None else f", fitness {value:.4f}",
+                record.parameter_count or 0,
+                _budget_note(session),
+            )
             commit()
         if expired():
             break
         completed = population.generation_number + 1
+        logger.info(
+            "generation %d complete: %d candidates, best fitness %s%s",
+            population.generation_number,
+            len(fitnesses),
+            "n/a" if best_fitness is None else f"{best_fitness:.4f}",
+            _budget_note(session),
+        )
         if completed >= number_of_generations or not any(map(math.isfinite, fitnesses)):
             done = True
             commit()
@@ -214,6 +246,15 @@ def run_resumable_candidates(
             )
         ):
             best, fitness, size = genome, record.fitness, record.parameter_count
+        logger.info(
+            "cand %d/%d: %s%s, %d params%s",
+            position,
+            count,
+            record.status.value,
+            "" if record.fitness is None else f", fitness {record.fitness:.4f}",
+            record.parameter_count or 0,
+            _budget_note(session),
+        )
         position += 1
         commit()
     if best is None or fitness is None:

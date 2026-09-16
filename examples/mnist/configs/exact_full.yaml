@@ -23,7 +23,7 @@ protocol:
   maximum_phenotype_parameters: 5000000
   maximum_training_samples: null   # whole official training split
   maximum_test_samples: null       # whole official test split
-  search_budget_seconds: 3600      # pilot: confirm against generation cost
+  search_budget_seconds: 7200      # 2h/method; raised after the 3600s pilot showed only 6 generations
   uses_augmentation: true
 
 search:
