@@ -62,7 +62,12 @@ url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.uv.sources]
+# torchvision ships compiled operators against one torch ABI. On Linux torch
+# comes from the cu126 index, so torchvision must too - pulling it from PyPI
+# instead builds it against a different torch and every torchvision op fails
+# with "operator torchvision::nms does not exist". Same index, same ABI.
 torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
 
 [build-system]
 requires = ["hatchling"]
