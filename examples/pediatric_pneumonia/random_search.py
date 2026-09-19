@@ -52,7 +52,7 @@ def run_experiment(
     sampling = profile["random_search"]
     return run_profile_experiment(
         config_file_path=resolved_config_file_path,
-        method_name="random_search_deepneat",
+        method_name="random_search",
         build_search=make_random_search(
             algorithm_config,
             number_of_candidates=int(sampling["number_of_candidates"]),
