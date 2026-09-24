@@ -53,6 +53,7 @@ from polyneat.evaluators.binary_classification_metrics import (
     compute_binary_metrics,
 )
 from polyneat.evaluators.binary_inference import predict_binary
+from polyneat.evaluators.binary_predictions import NonFinitePredictionError
 from polyneat.evaluators.bootstrap_confidence_intervals import (
     BootstrapConfig,
     bootstrap_metric_confidence_intervals,
@@ -693,28 +694,47 @@ def run_pneumonia_protocol(
             artifacts_directory=artifacts_directory,
         )
     ]
+    failed_retrainings: list[dict] = []
     for retraining_seed in settings.retraining_seeds:
+        model_id = f"{method_name}_track_b_seed{retraining_seed}"
         retrained_model, retrained_preprocessor, training_summary = retrain_topology_for_track_b(
             settings, data, selected, retraining_seed
         )
-        frozen_models.append(
-            freeze_and_calibrate(
-                settings,
-                data,
-                model=retrained_model,
-                preprocessor=retrained_preprocessor,
-                model_id=f"{method_name}_track_b_seed{retraining_seed}",
-                track=TRACK_B,
-                genome_kind=selected.genome_kind,
-                genome_payload=selected.genome_payload,
-                metadata={
-                    "retraining_seed": retraining_seed,
-                    "training": training_summary,
-                    "method": method_name,
-                },
-                artifacts_directory=artifacts_directory,
+        try:
+            frozen_models.append(
+                freeze_and_calibrate(
+                    settings,
+                    data,
+                    model=retrained_model,
+                    preprocessor=retrained_preprocessor,
+                    model_id=model_id,
+                    track=TRACK_B,
+                    genome_kind=selected.genome_kind,
+                    genome_payload=selected.genome_payload,
+                    metadata={
+                        "retraining_seed": retraining_seed,
+                        "training": training_summary,
+                        "method": method_name,
+                    },
+                    artifacts_directory=artifacts_directory,
+                )
             )
-        )
+        except NonFinitePredictionError as error:
+            # A retraining that diverges under the shared recipe is a result about
+            # the topology, not a reason to discard the run: it is recorded as a
+            # failed retraining, and track A and the other retrainings are still
+            # scored. Dropping it silently would bias track B towards survivors.
+            logger.warning(
+                "Track B retraining %s diverged and is recorded as failed: %s", model_id, error
+            )
+            failed_retrainings.append(
+                {
+                    "model_id": model_id,
+                    "retraining_seed": retraining_seed,
+                    "reason": str(error),
+                    "training": training_summary,
+                }
+            )
 
     test_results = evaluate_on_official_test(settings, data, frozen_models, artifacts_directory)
     return _build_report(
@@ -726,6 +746,7 @@ def run_pneumonia_protocol(
         method_name=method_name,
         artifacts_directory=artifacts_directory,
         experiment_started_at=experiment_started_at,
+        failed_retrainings=failed_retrainings,
     )
 
 
@@ -739,8 +760,10 @@ def _build_report(
     method_name: str,
     artifacts_directory: Path | None,
     experiment_started_at: float,
+    failed_retrainings: list[dict] | None = None,
 ) -> ExperimentReport:
     """Assemble the report, keeping undefined metrics out of the scalar table."""
+    failed_retrainings = [] if failed_retrainings is None else failed_retrainings
     metric_values: dict[str, float] = {
         "search_validation_auroc": float(selected.selection_fitness),
         "selected_parameter_count": float(selected.parameter_count),
@@ -770,6 +793,9 @@ def _build_report(
         # Retrainings of one topology are aggregated within that topology; they
         # are repeats of one search, not independent searches.
         metric_values["track_b_mean_test_auroc"] = sum(track_b_aurocs) / len(track_b_aurocs)
+    if frozen_models:
+        # Reported next to the mean so a mean over fewer retrainings is visible.
+        metric_values["track_b_failed_retraining_count"] = float(len(failed_retrainings))
 
     evaluation_status_counts = count_by_status(list(selected.evaluation_records))
     number_of_evaluations = max(len(selected.evaluation_records), 1)
@@ -803,6 +829,7 @@ def _build_report(
                     for frozen in frozen_models
                 },
                 "official_test": test_results,
+                "track_b_failed_retrainings": failed_retrainings,
                 "effective_configuration": _effective_configuration(settings, method_name),
                 "environment": execution_environment(settings.device_for_computation),
                 "summary": {
