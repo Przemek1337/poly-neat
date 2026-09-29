@@ -41,13 +41,15 @@ differ from ``successful_runs`` when a metric is missing on an otherwise
 successful run - ``plateau_generation`` is ``None`` for a run with no
 generations."""
 
-STANDARD_DEVIATION_IS_POPULATION = True
-"""Recorded in the output so a hand-check cannot silently disagree.
+STANDARD_DEVIATION_IS_SAMPLE = True
+"""The reported spread is the sample standard deviation, divisor ``n - 1``.
 
-``statistics.pstdev`` divides by ``n``. Excel's ``STDEV()`` and numpy's default
-``std(ddof=0)`` do not agree with each other on this, and at ``n = 5`` the two
-conventions differ by about 12 percent - large enough to look like a bug when
-someone recomputes a column by hand."""
+The runs of a cell are a sample from the algorithm's run-to-run distribution,
+so Bessel's correction applies. This matches ``statistics.stdev``, numpy's
+``std(ddof=1)``, R's ``sd()`` and Excel's ``STDEV()`` - but not numpy's default
+``std()``, which divides by ``n`` and comes out about 3.5 percent smaller at
+``n = 15``. It deliberately differs from ``benchmarks/run_benchmark.py``, which
+reports the population value."""
 
 AGGREGATE_FIELD_NAMES: tuple[str, ...] = (
     "dataset",
@@ -112,10 +114,7 @@ def load_run_records(runs_directory: Path) -> list[dict[str, object]]:
 
 
 def summarize_values(values: list[float]) -> dict[str, float | None]:
-    """Mean, population standard deviation, median, min, max and count.
-
-    The population standard deviation matches what ``benchmarks/run_benchmark.py``
-    reports, so the two harnesses do not disagree about the same word.
+    """Mean, sample standard deviation, median, min, max and count.
 
     Args:
         values: Observations to summarise; may be empty.
@@ -127,8 +126,9 @@ def summarize_values(values: list[float]) -> dict[str, float | None]:
 
     Returns:
         A dict whose statistics are ``None`` when there is nothing to summarise.
-        ``standard_deviation`` is the population standard deviation (divisor
-        ``n``); see :data:`STANDARD_DEVIATION_IS_POPULATION`.
+        ``standard_deviation`` is the sample standard deviation (divisor
+        ``n - 1``), and ``None`` for a single observation, where it is
+        undefined; see :data:`STANDARD_DEVIATION_IS_SAMPLE`.
     """
     finite_values = [value for value in values if math.isfinite(value)]
     if not finite_values:
@@ -143,7 +143,7 @@ def summarize_values(values: list[float]) -> dict[str, float | None]:
     values = finite_values
     return {
         "mean": statistics.fmean(values),
-        "standard_deviation": statistics.pstdev(values),
+        "standard_deviation": statistics.stdev(values) if len(values) > 1 else None,
         "median": statistics.median(values),
         "minimum": min(values),
         "maximum": max(values),

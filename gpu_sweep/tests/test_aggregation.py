@@ -47,15 +47,15 @@ def test_summarize_values_reports_the_five_number_summary() -> None:
     assert summary["minimum"] == pytest.approx(0.2)
     assert summary["maximum"] == pytest.approx(0.6)
     assert summary["count"] == 3
-    # population standard deviation of [0.2, 0.4, 0.6]
-    assert summary["standard_deviation"] == pytest.approx(0.16329931, abs=1e-6)
+    # sample standard deviation (divisor n - 1) of [0.2, 0.4, 0.6]
+    assert summary["standard_deviation"] == pytest.approx(0.2)
 
 
-def test_summarize_values_of_a_single_value_has_zero_spread() -> None:
+def test_summarize_values_of_a_single_value_has_undefined_spread() -> None:
     summary = summarize_values([0.5])
 
     assert summary["mean"] == pytest.approx(0.5)
-    assert summary["standard_deviation"] == pytest.approx(0.0)
+    assert summary["standard_deviation"] is None
 
 
 def test_summarize_values_of_nothing_is_empty_not_an_error() -> None:
@@ -88,7 +88,7 @@ def test_aggregate_run_records_averages_each_cell_over_its_runs() -> None:
     assert len(aggregates) == 1
     assert aggregates[0]["dataset"] == "colon"
     assert aggregates[0]["test_macro_f1_mean"] == pytest.approx(0.5)
-    assert aggregates[0]["test_macro_f1_standard_deviation"] == pytest.approx(0.1)
+    assert aggregates[0]["test_macro_f1_standard_deviation"] == pytest.approx(0.02**0.5)
     assert aggregates[0]["successful_runs"] == 2
     assert aggregates[0]["failed_runs"] == 0
 
