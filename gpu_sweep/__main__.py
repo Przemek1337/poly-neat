@@ -8,6 +8,14 @@ Run from the repository root on the target machine:
     uv run python -m gpu_sweep --analyze gpu_sweep_results/<timestamp>
     uv run python -m gpu_sweep --render-topology gpu_sweep_results/<timestamp>
 
+The defaults are small on purpose. The thesis protocol needs every knob spelled
+out:
+
+    uv run python -u -m gpu_sweep --runs 15 --generations 150 --population 50 \
+        --timeout-seconds 36000 --train-fraction 0.66 --seed 42
+
+``--device cpu`` runs the same pipeline without CUDA, for smoke tests only.
+
 Every run of every (dataset, algorithm) cell happens in its own child process
 with a wall-clock timeout, so one hang or CUDA out-of-memory costs one run
 rather than the sweep. Aggregation, statistics and figures are recomputed from
@@ -20,12 +28,14 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import hashlib
 import json
 import subprocess
 import sys
 import traceback
 from pathlib import Path
 
+import numpy
 import torch
 
 from gpu_sweep.aggregation import load_run_records, write_json_atomically
@@ -46,6 +56,20 @@ DEFAULT_NUMBER_OF_RUNS = 5
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_TRAIN_FRACTION = 0.66
 DEFAULT_RANDOM_SEED = 42
+SPLIT_SEED_OFFSET = 1000
+"""Run ``i`` splits with seed ``--seed + SPLIT_SEED_OFFSET + i`` and evolves with
+``--seed + i``. The offset keeps the two seeds apart: both feed
+``numpy.random.default_rng``, and equal seeds would hand the split and the
+evolution the same random stream."""
+
+PROTOCOL_LABELS: dict[str, str] = {
+    "feature_scaling_fit": "train",
+    "split_seed_rule": "seed + 1000 + run_index",
+    "prediction_rule": "argmax of the output activations, ties to the lowest class index",
+}
+"""Stored in every run record and in ``sweep_meta.json`` so records of this
+protocol cannot be mixed up with the first sweep's, which scaled over all rows
+and used one split for every run."""
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -102,7 +126,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--seed",
         type=int,
         default=DEFAULT_RANDOM_SEED,
-        help=f"seed for the split and the evolution (default: {DEFAULT_RANDOM_SEED})",
+        help=(
+            f"base seed: run i evolves with seed+i and splits with "
+            f"seed+{SPLIT_SEED_OFFSET}+i (default: {DEFAULT_RANDOM_SEED})"
+        ),
+    )
+    parser.add_argument(
+        "--device",
+        choices=("cuda", "cpu"),
+        default="cuda",
+        help=(
+            "device to evolve on (default: cuda). cpu exists for smoke tests only: "
+            "its numbers are not comparable with a CUDA sweep"
+        ),
     )
     parser.add_argument(
         "--list-cells",
@@ -130,7 +166,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--topology-dir",
         default=None,
-        help="internal: where --single writes topology artifacts (first run only)",
+        help="internal: where --single writes the scored network of its run",
     )
     parser.add_argument(
         "--analyze",
@@ -235,22 +271,34 @@ RUN_CSV_FIELD_NAMES: tuple[str, ...] = (
     "runtime_seconds",
     "peak_gpu_memory_megabytes",
     "phenotype_output_device",
+    "device_name",
     "evolution_seed",
     "split_seed",
+    "constant_train_feature_count",
+    "train_tie_count",
+    "test_tie_count",
+    "output_sums_match_forward_pass",
+    "feature_scaling_fit",
+    "prediction_rule",
     "error",
 )
 
 RUN_RECORD_FIELD_NAMES: tuple[str, ...] = (
     *RUN_CSV_FIELD_NAMES,
     "generation_best_fitnesses",
+    "generation_species_counts",
     "per_class_f1_scores",
 )
 """Everything stored per run.
 
-Only the two per-generation vectors stay out of ``runs.csv``, because a CSV
-cell cannot hold a list; they live in the JSON records. The seeds *are* in the
-CSV - they are plain integers, and they are the first thing anyone needs in
-order to reproduce a single row."""
+Only the per-generation and per-class vectors stay out of ``runs.csv``,
+because a CSV cell cannot hold a list; they live in the JSON records. The seeds
+*are* in the CSV - they are plain integers, and they are the first thing anyone
+needs in order to reproduce a single row.
+
+Per-patient arrays (output sums, outputs, predictions) are too large for a
+record and go to ``predictions/<dataset>__<algorithm>__run<i>.npz``; the split
+positions and fitted scaling go to ``splits/<dataset>__run<i>.json``."""
 
 
 def build_run_record(
@@ -326,6 +374,57 @@ def resolve_cuda_device() -> torch.device:
     return torch.device("cuda")
 
 
+def resolve_device(device_name: str) -> torch.device:
+    """Return the device ``--device`` asks for.
+
+    ``cuda`` goes through :func:`resolve_cuda_device`, so a machine without
+    CUDA still stops with an error instead of silently falling back.
+    """
+    if device_name == "cpu":
+        return torch.device("cpu")
+    return torch.device(resolve_cuda_device())
+
+
+def device_display_name(device: torch.device) -> str:
+    """Human-readable name of ``device`` for the records."""
+    if device.type == "cuda":
+        return torch.cuda.get_device_name(device)
+    return "cpu"
+
+
+def split_seed_for_run(base_seed: int, run_index: int) -> int:
+    """Seed of run ``run_index``'s train/test split; the same for every algorithm."""
+    return base_seed + SPLIT_SEED_OFFSET + run_index
+
+
+def write_split_record(dataset: object, split_seed: int, split_path: Path) -> None:
+    """Store a run's split positions and fitted scaling, once per (dataset, run).
+
+    Every algorithm of a run sees the same split, so the first one to get here
+    writes the file and the others leave it alone.
+    """
+    if split_path.exists():
+        return
+    write_json_atomically(
+        {
+            "dataset": dataset.dataset_key,
+            "split_seed": split_seed,
+            "train_positions": [int(position) for position in dataset.train_positions],
+            "test_positions": [int(position) for position in dataset.test_positions],
+            "feature_scaling": dataset.feature_scaling.to_serializable_dict(),
+        },
+        split_path,
+    )
+
+
+def write_per_patient_outputs(per_patient_outputs: dict[str, object], output_path: Path) -> None:
+    """Store the per-patient arrays of one run as a compressed ``.npz``."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_name(output_path.stem + ".partial.npz")
+    numpy.savez_compressed(temporary_path, **per_patient_outputs)
+    temporary_path.replace(output_path)
+
+
 def run_single_run(
     dataset_key: str,
     algorithm_name: str,
@@ -334,31 +433,49 @@ def run_single_run(
 ) -> dict[str, object]:
     """Perform one run of one cell in this process. The child-process body.
 
-    The split seed is ``--seed`` for every run, so all repetitions of a cell
-    see identical data; the evolution seed is ``--seed + run_index``, so the
-    spread between runs measures the search rather than the sampling.
+    The split seed is ``--seed + SPLIT_SEED_OFFSET + run_index``, so every run
+    sees a different stratified split while all algorithms of the same run see
+    the same one; the evolution seed is ``--seed + run_index``. The spread
+    between runs therefore covers both the search and the sampling of the test
+    patients.
+
+    Besides the JSON record it writes, next to the ``runs`` directory that
+    ``--result-path`` points into: the run's split and scaling
+    (``splits/``), the per-patient outputs (``predictions/``) and, when
+    ``--topology-dir`` is given, the scored network (``topology/``).
     """
     from gpu_sweep.algorithm_runners import run_algorithm_on_dataset
     from gpu_sweep.convergence import find_plateau_generation
     from gpu_sweep.dataset_catalog import DATASET_SPECS, load_tabular_dataset
     from gpu_sweep.topology_report import write_topology_record
 
-    device = resolve_cuda_device()
-    torch.cuda.reset_peak_memory_stats(device)
-    split_seed = arguments.seed
+    device = resolve_device(arguments.device)
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    split_seed = split_seed_for_run(arguments.seed, run_index)
     evolution_seed = arguments.seed + run_index
     dataset = load_tabular_dataset(
         DATASET_SPECS[dataset_key],
         train_fraction=arguments.train_fraction,
         random_seed=split_seed,
     )
+    # --result-path is <output>/runs/<name>.json; the other per-run artifacts
+    # live beside the runs directory.
+    output_directory = Path(arguments.result_path).parent.parent
+    write_split_record(
+        dataset, split_seed, output_directory / "splits" / f"{dataset_key}__run{run_index}.json"
+    )
     shape_fields = {
         "number_of_samples": dataset.number_of_samples,
         "number_of_features": dataset.number_of_features,
         "number_of_classes": dataset.number_of_classes,
         "device": str(device),
+        "device_name": device_display_name(device),
         "evolution_seed": evolution_seed,
         "split_seed": split_seed,
+        "constant_train_feature_count": len(dataset.feature_scaling.constant_feature_indices),
+        "feature_scaling_fit": PROTOCOL_LABELS["feature_scaling_fit"],
+        "prediction_rule": PROTOCOL_LABELS["prediction_rule"],
     }
     try:
         outcome = run_algorithm_on_dataset(
@@ -387,15 +504,25 @@ def run_single_run(
             write_topology_record(
                 genome,
                 Path(arguments.topology_dir),
-                f"{dataset_key}__{algorithm_name}__{genome_label}",
-                title=f"{dataset_key} / {algorithm_name} / {genome_label}",
+                f"{dataset_key}__{algorithm_name}__run{run_index}__{genome_label}",
+                title=f"{dataset_key} / {algorithm_name} / run {run_index} / {genome_label}",
                 structure_notes={
                     **outcome.structure_notes,
                     "dataset_features": dataset.number_of_features,
                     "dataset_classes": dataset.number_of_classes,
+                    "run_index": run_index,
                     "evolution_seed": evolution_seed,
+                    "split_seed": split_seed,
                 },
             )
+
+    if outcome.per_patient_outputs:
+        write_per_patient_outputs(
+            outcome.per_patient_outputs,
+            output_directory
+            / "predictions"
+            / f"{dataset_key}__{algorithm_name}__run{run_index}.npz",
+        )
 
     return build_run_record(
         dataset_key,
@@ -404,13 +531,21 @@ def run_single_run(
         status="ok",
         generations_completed=outcome.generations_completed,
         generation_best_fitnesses=outcome.generation_best_fitnesses,
+        generation_species_counts=outcome.generation_species_counts,
         per_class_f1_scores=outcome.per_class_f1_scores,
+        train_tie_count=outcome.tie_counts.get("train"),
+        test_tie_count=outcome.tie_counts.get("test"),
+        output_sums_match_forward_pass=outcome.output_sums_match_forward_pass,
         first_generation_best_fitness=outcome.first_generation_best_fitness,
         last_generation_best_fitness=outcome.last_generation_best_fitness,
         plateau_generation=find_plateau_generation(outcome.generation_best_fitnesses),
         runtime_seconds=outcome.runtime_seconds,
         phenotype_output_device=outcome.phenotype_output_device,
-        peak_gpu_memory_megabytes=torch.cuda.max_memory_allocated(device) / (1024 * 1024),
+        peak_gpu_memory_megabytes=(
+            torch.cuda.max_memory_allocated(device) / (1024 * 1024)
+            if device.type == "cuda"
+            else None
+        ),
         train_accuracy=outcome.metric_values.get("train_accuracy"),
         test_accuracy=outcome.metric_values.get("test_accuracy"),
         train_macro_f1=outcome.metric_values.get("train_macro_f1"),
@@ -447,10 +582,119 @@ def _child_process_command(
         str(arguments.train_fraction),
         "--seed",
         str(arguments.seed),
+        "--device",
+        arguments.device,
     ]
     if topology_directory is not None:
         command.extend(["--topology-dir", str(topology_directory)])
     return command
+
+
+def recorded_status(result_path: Path) -> str | None:
+    """Status stored in a run record, or ``None`` when it cannot be read."""
+    try:
+        return json.loads(result_path.read_text(encoding="utf-8")).get("status")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def set_aside_failed_record(result_path: Path, failed_directory: Path) -> None:
+    """Move a non-``ok`` record into ``failed_directory`` with a timestamp suffix."""
+    failed_directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    result_path.replace(failed_directory / f"{result_path.stem}__{stamp}.json")
+
+
+def _git_output(*git_arguments: str) -> str | None:
+    """Output of a git command run in this repository, or ``None`` if git fails."""
+    repository_root = Path(__file__).resolve().parent.parent
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository_root), *git_arguments],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return completed.stdout.strip()
+
+
+def dataset_file_checksums(dataset_keys: list[str]) -> dict[str, str]:
+    """SHA-256 of every cached raw file the given datasets read."""
+    from gpu_sweep.dataset_catalog import DATASET_SPECS, DEFAULT_CACHE_ROOT
+
+    checksums: dict[str, str] = {}
+    for dataset_key in dataset_keys:
+        for file_name, _ in DATASET_SPECS[dataset_key].raw_files:
+            file_path = DEFAULT_CACHE_ROOT / dataset_key / file_name
+            if file_path.exists():
+                checksums[f"{dataset_key}/{file_name}"] = hashlib.sha256(
+                    file_path.read_bytes()
+                ).hexdigest()
+    return checksums
+
+
+def update_sweep_meta(
+    meta_path: Path,
+    *,
+    timestamp: str,
+    arguments: argparse.Namespace,
+    device: torch.device,
+    cells: list[tuple[str, str]],
+    number_of_runs: int,
+) -> None:
+    """Write ``sweep_meta.json``, appending to it on ``--resume`` instead of overwriting.
+
+    The top-level fields describe the sweep as first started. Every invocation
+    - the first one and each resume - adds an entry to ``invocations`` with its
+    own arguments, device, library versions and repository state, so a sweep
+    finished over several sessions keeps the full history.
+    """
+    status_lines = _git_output("status", "--porcelain")
+    invocation = {
+        "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "resume": arguments.resume is not None,
+        "argv": sys.argv[1:],
+        "device": str(device),
+        "device_name": device_display_name(device),
+        "python_version": sys.version.split()[0],
+        "numpy_version": numpy.__version__,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "git_commit": _git_output("rev-parse", "HEAD"),
+        "git_uncommitted_changes": status_lines.splitlines() if status_lines else [],
+        "number_of_cells": len(cells),
+        "number_of_runs": number_of_runs,
+    }
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta.setdefault("invocations", []).append(invocation)
+    else:
+        dataset_keys = sorted({dataset_key for dataset_key, _ in cells})
+        meta = {
+            "timestamp": timestamp,
+            "torch_version": torch.__version__,
+            "torch_cuda_version": torch.version.cuda,
+            "cuda_device_name": device_display_name(device),
+            "device": str(device),
+            "generations": arguments.generations,
+            "population": arguments.population,
+            "runs_per_cell": arguments.runs,
+            "timeout_seconds": arguments.timeout_seconds,
+            "train_fraction": arguments.train_fraction,
+            "seed": arguments.seed,
+            "number_of_cells": len(cells),
+            "number_of_runs": number_of_runs,
+            "seeding_rule": (
+                f"split seed is --seed + {SPLIT_SEED_OFFSET} + run_index (the same for "
+                "every algorithm of a run); evolution seed is --seed + run_index"
+            ),
+            **PROTOCOL_LABELS,
+            "dataset_file_sha256": dataset_file_checksums(dataset_keys),
+            "invocations": [invocation],
+        }
+    write_json_atomically(meta, meta_path)
 
 
 def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Path:
@@ -463,7 +707,7 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
     Returns:
         The directory the results were written to.
     """
-    resolve_cuda_device()
+    device = resolve_device(arguments.device)
     if arguments.resume is not None:
         output_directory = Path(arguments.resume)
         timestamp = output_directory.name
@@ -475,28 +719,13 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
     runs_directory.mkdir(parents=True, exist_ok=True)
 
     runs = select_runs(cells, arguments.runs)
-    (output_directory / "sweep_meta.json").write_text(
-        json.dumps(
-            {
-                "timestamp": timestamp,
-                "torch_version": torch.__version__,
-                "torch_cuda_version": torch.version.cuda,
-                "cuda_device_name": torch.cuda.get_device_name(0),
-                "generations": arguments.generations,
-                "population": arguments.population,
-                "runs_per_cell": arguments.runs,
-                "timeout_seconds": arguments.timeout_seconds,
-                "train_fraction": arguments.train_fraction,
-                "seed": arguments.seed,
-                "number_of_cells": len(cells),
-                "number_of_runs": len(runs),
-                "seeding_rule": (
-                    "split seed is --seed for every run; evolution seed is --seed + run_index"
-                ),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+    update_sweep_meta(
+        output_directory / "sweep_meta.json",
+        timestamp=timestamp,
+        arguments=arguments,
+        device=device,
+        cells=cells,
+        number_of_runs=len(runs),
     )
 
     # Records are gathered from disk after the loop rather than accumulated
@@ -505,14 +734,21 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
     for position, (dataset_key, algorithm_name, run_index) in enumerate(runs, start=1):
         result_path = runs_directory / f"{dataset_key}__{algorithm_name}__run{run_index}.json"
         if arguments.resume is not None and result_path.exists():
-            print(
-                f"[{position}/{len(runs)}] {dataset_key}/{algorithm_name} "
-                f"run {run_index}: already recorded, skipping"
-            )
-            continue
+            if recorded_status(result_path) == "ok":
+                print(
+                    f"[{position}/{len(runs)}] {dataset_key}/{algorithm_name} "
+                    f"run {run_index}: already recorded, skipping",
+                    flush=True,
+                )
+                continue
+            # A failed or timed-out run is retried. Its old record moves aside
+            # rather than being deleted, and must not stay at result_path: the
+            # loop below reads result_path to learn how the new attempt went.
+            set_aside_failed_record(result_path, output_directory / "runs_failed")
         print(
             f"\n=== [{position}/{len(runs)}] {dataset_key}/{algorithm_name} "
-            f"run {run_index} (timeout {arguments.timeout_seconds}s) ==="
+            f"run {run_index} (timeout {arguments.timeout_seconds}s) ===",
+            flush=True,
         )
         command = _child_process_command(
             dataset_key,
@@ -520,7 +756,7 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
             run_index,
             arguments,
             result_path,
-            topology_directory if run_index == 0 else None,
+            topology_directory,
         )
         try:
             completed = subprocess.run(command, timeout=arguments.timeout_seconds, check=False)
@@ -544,7 +780,7 @@ def run_sweep(arguments: argparse.Namespace, cells: list[tuple[str, str]]) -> Pa
             )
         if not result_path.exists():
             write_json_atomically(record, result_path)
-        print(f"-> {record['status']} (test macro-F1 {record['test_macro_f1']})")
+        print(f"-> {record['status']} (test macro-F1 {record['test_macro_f1']})", flush=True)
 
     # Rebuild runs.csv from the stored JSON rather than from an in-memory
     # list, so it is generated from exactly the source aggregates.csv reads.

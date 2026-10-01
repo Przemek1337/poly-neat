@@ -47,9 +47,10 @@ STANDARD_DEVIATION_IS_SAMPLE = True
 The runs of a cell are a sample from the algorithm's run-to-run distribution,
 so Bessel's correction applies. This matches ``statistics.stdev``, numpy's
 ``std(ddof=1)``, R's ``sd()`` and Excel's ``STDEV()`` - but not numpy's default
-``std()``, which divides by ``n`` and comes out about 3.5 percent smaller at
-``n = 15``. It deliberately differs from ``benchmarks/run_benchmark.py``, which
-reports the population value."""
+``std()``, which divides by ``n`` and comes out about 3.4 percent smaller at
+``n = 15`` (so the ``n - 1`` value is about 3.5 percent larger). It
+deliberately differs from ``benchmarks/run_benchmark.py``, which reports the
+population value."""
 
 AGGREGATE_FIELD_NAMES: tuple[str, ...] = (
     "dataset",

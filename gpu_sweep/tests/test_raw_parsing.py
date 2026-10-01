@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from gpu_sweep.raw_parsing import (
+    fit_feature_scaling,
     read_arff_data_rows,
     read_delimited_rows,
     read_matlab_v5_arrays,
@@ -150,3 +151,35 @@ def test_read_matlab_v5_arrays_reads_compressed_and_plain_elements(tmp_path: Pat
 
     assert named_arrays["X"].tolist() == [[1.0, 2.0], [3.0, 4.0]]
     assert named_arrays["Y"].reshape(-1).tolist() == [-1.0, 1.0]
+
+
+def test_fit_feature_scaling_uses_only_the_rows_it_is_given() -> None:
+    train = np.array([[1.0, 4.0], [3.0, 4.0]], dtype=np.float32)
+    test = np.array([[5.0, 10.0]], dtype=np.float32)
+
+    scaling = fit_feature_scaling(train, "standardize")
+
+    assert scaling.apply(train)[:, 0].tolist() == [-1.0, 1.0]
+    assert scaling.apply(test)[0, 0] == pytest.approx(3.0)
+    # Column 1 is constant on the training rows: zero in both, whatever the test holds.
+    assert scaling.constant_feature_indices == (1,)
+    assert scaling.apply(train)[:, 1].tolist() == [0.0, 0.0]
+    assert scaling.apply(test)[0, 1] == 0.0
+
+
+def test_fit_feature_scaling_rejects_an_unknown_choice() -> None:
+    with pytest.raises(ValueError):
+        fit_feature_scaling(np.zeros((2, 1)), "robust")
+
+
+def test_feature_scaling_round_trips_to_a_json_safe_dict() -> None:
+    scaling = fit_feature_scaling(np.array([[0.0, 2.0], [2.0, 2.0]]), "standardize")
+
+    payload = scaling.to_serializable_dict()
+
+    assert payload == {
+        "method": "standardize",
+        "offsets": [1.0, 2.0],
+        "divisors": [1.0, 1.0],
+        "constant_feature_indices": [1],
+    }

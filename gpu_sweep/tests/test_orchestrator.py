@@ -132,7 +132,7 @@ def test_child_process_command_carries_the_run_index_and_every_knob() -> None:
         assert command[command.index(flag) + 1] == value
 
 
-def test_child_process_command_asks_for_topology_only_on_the_first_run() -> None:
+def test_child_process_command_passes_the_topology_directory_when_given() -> None:
     arguments = _sweep_arguments()
 
     with_topology = sweep_main._child_process_command(
@@ -159,6 +159,7 @@ def test_run_sweep_collects_child_records_and_survives_a_timeout(
     monkeypatch.setattr(sweep_main, "resolve_cuda_device", lambda: "cuda")
     monkeypatch.setattr(sweep_main.torch.cuda, "get_device_name", lambda index: "NVIDIA L4")
     monkeypatch.setattr(sweep_main, "analyze_results_directory", lambda *a, **k: None)
+    monkeypatch.setattr(sweep_main, "_git_output", lambda *git_arguments: None)
 
     def fake_subprocess_run(command: list[str], **_: object) -> object:
         dataset_key, algorithm_name = command[4], command[5]
@@ -192,6 +193,47 @@ def test_run_sweep_collects_child_records_and_survives_a_timeout(
     )
     assert [row["status"] for row in rows] == ["ok", "timeout"]
     assert (output_directory / "runs" / "colon__neat__run1.json").exists()
-    assert json.loads((output_directory / "sweep_meta.json").read_text(encoding="utf-8"))[
-        "runs_per_cell"
-    ] == 2
+    meta = json.loads((output_directory / "sweep_meta.json").read_text(encoding="utf-8"))
+    assert meta["runs_per_cell"] == 2
+    assert meta["feature_scaling_fit"] == "train"
+    assert len(meta["invocations"]) == 1
+
+    # Resuming skips the ok run, retries the timed-out one (its old record is
+    # set aside, not deleted) and appends to the metadata instead of replacing it.
+    launched_run_indices: list[int] = []
+
+    def fake_resumed_run(command: list[str], **_: object) -> object:
+        launched_run_indices.append(int(command[7]))
+        result_path = Path(command[command.index("--result-path") + 1])
+        result_path.write_text(
+            json.dumps(build_run_record("colon", "neat", int(command[7]), status="ok")),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(sweep_main.subprocess, "run", fake_resumed_run)
+    sweep_main.run_sweep(
+        _sweep_arguments(runs=2, resume=str(output_directory)), [("colon", "neat")]
+    )
+
+    assert launched_run_indices == [1]
+    assert len(list((output_directory / "runs_failed").glob("colon__neat__run1__*.json"))) == 1
+    resumed_meta = json.loads((output_directory / "sweep_meta.json").read_text(encoding="utf-8"))
+    assert resumed_meta["timestamp"] == meta["timestamp"]
+    assert [entry["resume"] for entry in resumed_meta["invocations"]] == [False, True]
+
+
+def test_split_seed_differs_per_run_and_stays_apart_from_the_evolution_seed() -> None:
+    split_seeds = [sweep_main.split_seed_for_run(42, run_index) for run_index in range(15)]
+
+    assert len(set(split_seeds)) == 15
+    assert split_seeds[0] == 42 + sweep_main.SPLIT_SEED_OFFSET
+    assert not set(split_seeds) & {42 + run_index for run_index in range(15)}
+
+
+def test_child_process_command_passes_the_device() -> None:
+    command = sweep_main._child_process_command(
+        "colon", "neat", 0, _sweep_arguments(device="cpu"), Path("r.json"), None
+    )
+
+    assert command[command.index("--device") + 1] == "cpu"

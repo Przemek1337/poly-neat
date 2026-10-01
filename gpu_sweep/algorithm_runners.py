@@ -21,6 +21,7 @@ import polyneat as pn
 from gpu_sweep.dataset_catalog import TabularDataset
 from gpu_sweep.fitness import OneHotMeanSquaredErrorFitnessEvaluator
 from gpu_sweep.metrics import evaluate_phenotype_metrics
+from gpu_sweep.output_sums import count_tied_maxima, evaluate_networks_with_output_sums
 from polyneat.core.generation_statistics import GenerationStatistics
 from polyneat.evaluators.binary_recognizer_evaluator import BinaryRecognizerFitnessEvaluator
 from polyneat.evaluators.multiclass_dataset_evaluator import MulticlassDatasetFitnessEvaluator
@@ -52,6 +53,19 @@ class CellOutcome:
             per class for the C-NEAT and L-NEAT ensembles.
         structure_notes: Free-form facts for the topology description, such as
             HyperNEAT's substrate layer sizes.
+        generation_species_counts: Species count of each generation, in order
+            (``None`` entries where the algorithm reports none). For L-NEAT a
+            list per class, since every class has its own evolution.
+        per_patient_outputs: Per-split arrays for every patient - positions,
+            labels, output sums before the activation, outputs, predictions and
+            a tie flag - keyed ``"<split>_<field>"``. See
+            :func:`record_per_patient_outputs`.
+        tie_counts: ``{"train": n, "test": n}``, patients whose largest output
+            occurs in more than one column.
+        output_sums_match_forward_pass: Whether the activations recomputed
+            alongside the sums equal the library phenotype's outputs exactly on
+            both splits - the check that the stored sums belong to the scored
+            network.
     """
 
     metric_values: dict[str, float]
@@ -64,6 +78,105 @@ class CellOutcome:
     phenotype_output_device: str
     named_genomes: dict[str, object]
     structure_notes: dict[str, object]
+    generation_species_counts: list = dataclasses.field(default_factory=list)
+    per_patient_outputs: dict[str, np.ndarray] = dataclasses.field(default_factory=dict)
+    tie_counts: dict[str, int] = dataclasses.field(default_factory=dict)
+    output_sums_match_forward_pass: bool | None = None
+
+
+@dataclass(frozen=True)
+class PredictionRecord:
+    """Per-patient outputs of the scored classifier, plus their summary checks."""
+
+    per_patient_outputs: dict[str, np.ndarray]
+    tie_counts: dict[str, int]
+    output_sums_match_forward_pass: bool
+
+    def as_outcome_fields(self) -> dict[str, object]:
+        """The matching :class:`CellOutcome` keyword arguments."""
+        return {
+            "per_patient_outputs": self.per_patient_outputs,
+            "tie_counts": self.tie_counts,
+            "output_sums_match_forward_pass": self.output_sums_match_forward_pass,
+        }
+
+
+class LastGenerationBestTracker(pn.BaseEvolutionCallback):
+    """Remember the highest-fitness genome of the most recently evaluated generation.
+
+    The run's reported network is the best genome of the whole run, which may
+    have appeared many generations before the end. This keeps, in memory only,
+    the best genome of the last evaluated population, so it can be stored next
+    to the reported one when the two differ. Ties are broken towards the first
+    genome, as the runner itself does.
+    """
+
+    def __init__(self) -> None:
+        self.genome: object | None = None
+        self.fitness: float | None = None
+        self.generation_number: int | None = None
+
+    def on_population_evaluated(self, context, population, fitnesses) -> None:  # noqa: ANN001
+        best_fitness = max(fitnesses)
+        self.genome = population.genomes[fitnesses.index(best_fitness)]
+        self.fitness = float(best_fitness)
+        self.generation_number = int(population.generation_number)
+
+
+def same_network(first_genome: object, second_genome: object) -> bool:
+    """Whether two network genomes have the same nodes and the same connections."""
+
+    def signature(genome: object) -> tuple:
+        return (
+            tuple(
+                (node.node_id, node.node_type, getattr(node, "activation_function_name", None))
+                for node in genome.node_genes
+            ),
+            tuple(
+                (
+                    connection.source_node_id,
+                    connection.target_node_id,
+                    float(connection.weight),
+                    bool(connection.is_enabled),
+                )
+                for connection in genome.connection_genes
+            ),
+        )
+
+    return signature(first_genome) == signature(second_genome)
+
+
+def add_last_generation_network(
+    named_genomes: dict[str, object],
+    structure_notes: dict[str, object],
+    *,
+    label: str,
+    best_network_genome: object,
+    tracker: LastGenerationBestTracker,
+    to_network: Callable[[object], object] | None = None,
+) -> None:
+    """Add the last generation's best network to ``named_genomes`` if it differs.
+
+    ``structure_notes`` records the last generation's number and fitness and
+    whether its best network equals the reported one, so a missing
+    ``<label>_last_generation`` file is explained rather than ambiguous.
+    """
+    if tracker.genome is None:
+        return
+    last_network_genome = to_network(tracker.genome) if to_network is not None else tracker.genome
+    is_same = same_network(last_network_genome, best_network_genome)
+    structure_notes[f"{label}_last_generation"] = {
+        "generation_number": tracker.generation_number,
+        "best_fitness": tracker.fitness,
+        "same_as_reported_network": is_same,
+    }
+    if not is_same:
+        named_genomes[f"{label}_last_generation"] = last_network_genome
+
+
+def species_counts_of(generation_history: Sequence[GenerationStatistics]) -> list[int | None]:
+    """Species count of every generation, in order."""
+    return [statistics.number_of_species for statistics in generation_history]
 
 
 def build_cell_outcome(
@@ -75,6 +188,7 @@ def build_cell_outcome(
     phenotype_output_device: str,
     named_genomes: dict[str, object],
     structure_notes: dict[str, object],
+    prediction_record: PredictionRecord | None = None,
 ) -> CellOutcome:
     """Reduce a run's per-generation statistics to one :class:`CellOutcome`.
 
@@ -87,6 +201,8 @@ def build_cell_outcome(
             produced its output on - the sweep's evidence that CUDA was used.
         named_genomes: Genomes to draw, keyed by a filename-safe label.
         structure_notes: Extra structural facts for the topology description.
+        prediction_record: Per-patient outputs and tie counts from
+            :func:`record_per_patient_outputs`, when available.
 
     Returns:
         The assembled outcome; the fitness scalars are ``nan`` and the curve is
@@ -104,6 +220,8 @@ def build_cell_outcome(
         phenotype_output_device=phenotype_output_device,
         named_genomes=named_genomes,
         structure_notes=structure_notes,
+        generation_species_counts=species_counts_of(generation_history),
+        **(prediction_record.as_outcome_fields() if prediction_record is not None else {}),
     )
 
 
@@ -125,6 +243,70 @@ def move_dataset_to_device(dataset: TabularDataset, device: torch.device) -> Tab
         dataset,
         train_features=dataset.train_features.to(device),
         test_features=dataset.test_features.to(device),
+    )
+
+
+def record_per_patient_outputs(
+    dataset: TabularDataset, phenotype: object, network_genomes: Sequence[object]
+) -> PredictionRecord:
+    """Store, for every patient of both splits, what the classifier produced.
+
+    Per split (``train`` and ``test``) the arrays are: ``positions`` (row
+    positions in the loaded dataset, ``-1`` when unknown), ``labels``,
+    ``output_sums`` (the sums the output activation is applied to),
+    ``outputs`` (the library phenotype's activations), ``predictions`` (the
+    argmax of ``outputs`` - the rule :mod:`gpu_sweep.metrics` scores with) and
+    ``tied`` (whether the row's largest output occurs more than once).
+
+    The prediction rule itself is unchanged; the sums are stored so that a
+    different rule can be applied after the sweep without evolving again.
+
+    Args:
+        dataset: The split the classifier was evolved against.
+        phenotype: The scored phenotype (a single network or an ensemble).
+        network_genomes: The phenotype's network genomes, in class order - the
+            single genome, the decoded HyperNEAT substrate, or one recognizer
+            per class.
+
+    Returns:
+        The arrays, the tie counts, and whether the recomputed activations
+        equal the phenotype's outputs bit for bit on both splits.
+    """
+    per_patient_outputs: dict[str, np.ndarray] = {}
+    tie_counts: dict[str, int] = {}
+    all_outputs_match = True
+    for split_name, features, labels, positions in (
+        ("train", dataset.train_features, dataset.train_labels, dataset.train_positions),
+        ("test", dataset.test_features, dataset.test_labels, dataset.test_positions),
+    ):
+        with torch.no_grad():
+            library_outputs = phenotype.forward_pass(features).cpu()
+        recomputed_outputs, output_sums = evaluate_networks_with_output_sums(
+            network_genomes, features, features.device
+        )
+        all_outputs_match = all_outputs_match and bool(
+            torch.equal(recomputed_outputs.cpu(), library_outputs)
+        )
+        row_maxima = library_outputs.max(dim=1, keepdim=True).values
+        per_patient_outputs[f"{split_name}_positions"] = (
+            np.asarray(positions, dtype=np.int64)
+            if positions is not None
+            else np.full(len(labels), -1, dtype=np.int64)
+        )
+        per_patient_outputs[f"{split_name}_labels"] = labels.cpu().numpy().astype(np.int64)
+        per_patient_outputs[f"{split_name}_output_sums"] = output_sums.cpu().numpy()
+        per_patient_outputs[f"{split_name}_outputs"] = library_outputs.numpy()
+        per_patient_outputs[f"{split_name}_predictions"] = (
+            library_outputs.argmax(dim=1).numpy().astype(np.int64)
+        )
+        per_patient_outputs[f"{split_name}_tied"] = (
+            (library_outputs == row_maxima).sum(dim=1) > 1
+        ).numpy()
+        tie_counts[split_name] = count_tied_maxima(library_outputs)
+    return PredictionRecord(
+        per_patient_outputs=per_patient_outputs,
+        tie_counts=tie_counts,
+        output_sums_match_forward_pass=all_outputs_match,
     )
 
 
@@ -247,13 +429,14 @@ def _run_single_network_family(
         target_labels=dataset.train_labels,
         number_of_classes=dataset.number_of_classes,
     )
+    last_generation_tracker = LastGenerationBestTracker()
     runner = pn.EvolutionRunner(
         algorithm=algorithm,
         fitness_evaluator=fitness_evaluator,
         termination_criterion=pn.MaxGenerationsTermination(
             max_generations=number_of_generations
         ),
-        callbacks=[pn.ConsoleStatisticsLogger()],
+        callbacks=[pn.ConsoleStatisticsLogger(), last_generation_tracker],
         random_seed=random_seed,
     )
     start_time = time.perf_counter()
@@ -264,6 +447,24 @@ def _run_single_network_family(
         result.best_genome_ever_found
     )
     metric_values, per_class_f1_scores = _split_metrics(dataset, best_phenotype)
+    scored_network_genome = (
+        genome_to_draw(result.best_genome_ever_found)
+        if genome_to_draw is not None
+        else result.best_genome_ever_found
+    )
+    prediction_record = record_per_patient_outputs(
+        dataset, best_phenotype, [scored_network_genome]
+    )
+    named_genomes: dict[str, object] = {"best": scored_network_genome}
+    notes = dict(structure_notes or {})
+    add_last_generation_network(
+        named_genomes,
+        notes,
+        label="best",
+        best_network_genome=scored_network_genome,
+        tracker=last_generation_tracker,
+        to_network=genome_to_draw,
+    )
     return build_cell_outcome(
         result.full_generation_history,
         runtime_seconds=runtime_seconds,
@@ -272,14 +473,9 @@ def _run_single_network_family(
         phenotype_output_device=phenotype_output_device_name(
             best_phenotype, dataset.train_features
         ),
-        named_genomes={
-            "best": (
-                genome_to_draw(result.best_genome_ever_found)
-                if genome_to_draw is not None
-                else result.best_genome_ever_found
-            )
-        },
-        structure_notes=dict(structure_notes or {}),
+        named_genomes=named_genomes,
+        structure_notes=notes,
+        prediction_record=prediction_record,
     )
 
 
@@ -444,6 +640,14 @@ def run_cneat(
         f"class_{class_label_index}": container.best_genome_for_class(class_label_index)
         for class_label_index in range(dataset.number_of_classes)
     }
+    prediction_record = record_per_patient_outputs(
+        dataset,
+        ensemble,
+        [
+            container.best_genome_for_class(class_label_index)
+            for class_label_index in range(dataset.number_of_classes)
+        ],
+    )
     return build_cell_outcome(
         result.full_generation_history,
         runtime_seconds=runtime_seconds,
@@ -458,6 +662,7 @@ def run_cneat(
         structure_notes={
             "genome_kind": "one single-output recognizer per class, combined by argmax"
         },
+        prediction_record=prediction_record,
     )
 
 
@@ -533,6 +738,10 @@ def run_lneat(
     total_generations = 0
     total_runtime_seconds = 0.0
     per_class_generation_curves: list[list[float]] = []
+    per_class_species_counts: list[list[int | None]] = []
+    last_generation_trackers = [
+        LastGenerationBestTracker() for _ in range(dataset.number_of_classes)
+    ]
 
     for class_label_index in range(dataset.number_of_classes):
         print(f"=== L-NEAT recognizer for class {class_label_index} ===")
@@ -569,7 +778,7 @@ def run_lneat(
             termination_criterion=pn.MaxGenerationsTermination(
                 max_generations=number_of_generations
             ),
-            callbacks=[pn.ConsoleStatisticsLogger()],
+            callbacks=[pn.ConsoleStatisticsLogger(), last_generation_trackers[class_label_index]],
             random_seed=random_seed,
         )
         start_time = time.perf_counter()
@@ -579,6 +788,7 @@ def run_lneat(
         per_class_generation_curves.append(
             [float(statistics.best_fitness) for statistics in result.full_generation_history]
         )
+        per_class_species_counts.append(species_counts_of(result.full_generation_history))
         best_recognizer_genomes.append(result.best_genome_ever_found)
 
     assert phenotype_decoder is not None
@@ -587,6 +797,7 @@ def run_lneat(
         phenotype_decoder=phenotype_decoder,
     )
     metric_values, per_class_f1_scores = _split_metrics(dataset, ensemble)
+    prediction_record = record_per_patient_outputs(dataset, ensemble, best_recognizer_genomes)
     averaged_curve_length = (
         min(len(curve) for curve in per_class_generation_curves)
         if per_class_generation_curves
@@ -596,6 +807,28 @@ def run_lneat(
         float(np.mean([curve[generation_index] for curve in per_class_generation_curves]))
         for generation_index in range(averaged_curve_length)
     ]
+    named_genomes: dict[str, object] = {
+        f"class_{class_label_index}": genome
+        for class_label_index, genome in enumerate(best_recognizer_genomes)
+    }
+    structure_notes: dict[str, object] = {
+        "genome_kind": "one backpropagation-trained recognizer per class, argmax ensemble",
+        "total_generations_across_classes": total_generations,
+        "note": (
+            "the convergence curve is the per-generation mean across the "
+            "per-class evolutions, which all share one generation budget; "
+            "generations_completed is that curve's length, while "
+            "total_generations_across_classes is the summed search effort"
+        ),
+    }
+    for class_label_index, genome in enumerate(best_recognizer_genomes):
+        add_last_generation_network(
+            named_genomes,
+            structure_notes,
+            label=f"class_{class_label_index}",
+            best_network_genome=genome,
+            tracker=last_generation_trackers[class_label_index],
+        )
     return CellOutcome(
         metric_values=metric_values,
         per_class_f1_scores=per_class_f1_scores,
@@ -615,20 +848,10 @@ def run_lneat(
         phenotype_output_device=phenotype_output_device_name(
             ensemble, dataset.train_features
         ),
-        named_genomes={
-            f"class_{class_label_index}": genome
-            for class_label_index, genome in enumerate(best_recognizer_genomes)
-        },
-        structure_notes={
-            "genome_kind": "one backpropagation-trained recognizer per class, argmax ensemble",
-            "total_generations_across_classes": total_generations,
-            "note": (
-                "the convergence curve is the per-generation mean across the "
-                "per-class evolutions, which all share one generation budget; "
-                "generations_completed is that curve's length, while "
-                "total_generations_across_classes is the summed search effort"
-            ),
-        },
+        named_genomes=named_genomes,
+        structure_notes=structure_notes,
+        generation_species_counts=per_class_species_counts,
+        **prediction_record.as_outcome_fields(),
     )
 
 

@@ -9,15 +9,19 @@ are out of scope for an automatic sweep.
 Where a KEEL source is unreachable (sci2s.ugr.es fails TLS verification), the
 dataset is taken from its original upstream instead.
 
-Every dataset is standardised per column - zero mean, unit variance - before
-the split. One scaling for all twenty keeps runtimes and fitness curves
-comparable across the sweep, and it is the scaling the wide microarray sets
-need anyway: their expression values span several orders of magnitude, which
-min-max would squash into a narrow band near zero. Statistics are taken over
-all rows, before the split, so the test half contributes to the column mean and
-standard deviation. That is a mild leak; it is deliberate here, because the
-sweep measures whether a dataset runs on the GPU and whether fitness moves, not
-generalisation quality.
+Every dataset is standardised per column - zero mean, unit variance. One
+scaling for all twenty keeps runtimes and fitness curves comparable across the
+sweep, and it is the scaling the wide microarray sets need anyway: their
+expression values span several orders of magnitude, which min-max would squash
+into a narrow band near zero. The statistics are fitted on the training rows
+only and then applied to both halves, so the test rows never influence the
+scaling. A column that is constant across the training rows is set to zero in
+both halves (see :class:`~gpu_sweep.raw_parsing.FeatureScaling`), which keeps
+the network's input width unchanged.
+
+The first sweep standardised over all rows before the split; that version is
+still available as :func:`~gpu_sweep.raw_parsing.scale_feature_columns` for
+re-scoring its stored networks.
 """
 
 from __future__ import annotations
@@ -30,12 +34,13 @@ import numpy as np
 import torch
 
 from gpu_sweep.raw_parsing import (
+    FeatureScaling,
     download_file_if_missing,
     read_arff_data_rows,
     read_delimited_rows,
     read_matlab_v5_arrays,
+    fit_feature_scaling,
     rows_to_features_and_labels,
-    scale_feature_columns,
 )
 
 DEFAULT_CACHE_ROOT = Path(__file__).resolve().parent.parent / "gpu_sweep_data"
@@ -84,7 +89,14 @@ class TabularDatasetSpec:
 
 @dataclass(frozen=True)
 class TabularDataset:
-    """A stratified train/test split of one dataset, ready for a fitness evaluator."""
+    """A stratified train/test split of one dataset, ready for a fitness evaluator.
+
+    ``train_positions`` and ``test_positions`` are row positions into the
+    dataset as :func:`load_features_and_labels` returns it (after rows with
+    missing values are dropped); ``feature_scaling`` holds the statistics that
+    were fitted on the training rows. All three are ``None`` for a dataset
+    assembled by hand, e.g. in tests.
+    """
 
     dataset_key: str
     train_features: torch.Tensor  # [n_train, n_features] float32
@@ -92,6 +104,9 @@ class TabularDataset:
     test_features: torch.Tensor  # [n_test, n_features] float32
     test_labels: torch.Tensor  # [n_test] long
     number_of_classes: int
+    train_positions: np.ndarray | None = None
+    test_positions: np.ndarray | None = None
+    feature_scaling: FeatureScaling | None = None
 
     @property
     def number_of_features(self) -> int:
@@ -398,7 +413,10 @@ DATASET_SPECS: dict[str, TabularDatasetSpec] = {
 def load_features_and_labels(
     spec: TabularDatasetSpec, *, cache_root: Path
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Download (once) and parse one dataset into scaled features and labels.
+    """Download (once) and parse one dataset into unscaled features and labels.
+
+    Scaling is left to :func:`load_tabular_dataset`, which fits it on the
+    training rows once the split is known.
 
     Args:
         spec: Catalog entry describing the files and their layout.
@@ -416,9 +434,7 @@ def load_features_and_labels(
             spec.raw_files[0][1], dataset_directory / spec.raw_files[0][0]
         )
         named_arrays = read_matlab_v5_arrays(data_path)
-        features = scale_feature_columns(
-            named_arrays["X"].astype(np.float32), spec.feature_scaling
-        )
+        features = named_arrays["X"].astype(np.float32)
         labels = np.array(
             [
                 spec.matlab_label_value_to_index[int(raw_label)]
@@ -451,7 +467,7 @@ def load_features_and_labels(
         missing_value_handling=spec.missing_value_handling,
     )
     return (
-        torch.from_numpy(scale_feature_columns(features, spec.feature_scaling)),
+        torch.from_numpy(features.astype(np.float32)),
         torch.from_numpy(labels),
     )
 
@@ -498,7 +514,11 @@ def load_tabular_dataset(
     train_fraction: float = 0.66,
     random_seed: int = 42,
 ) -> TabularDataset:
-    """Load one dataset and cut it into a stratified train/test split.
+    """Load one dataset, cut it into a stratified train/test split, then scale it.
+
+    The split depends only on the labels, ``train_fraction`` and
+    ``random_seed``. The scaling is fitted on the training rows and applied to
+    both halves.
 
     Args:
         spec: Catalog entry to load.
@@ -507,17 +527,23 @@ def load_tabular_dataset(
         random_seed: Seed for the split.
 
     Returns:
-        The assembled :class:`TabularDataset`.
+        The assembled :class:`TabularDataset`, carrying the split positions and
+        the fitted scaling.
     """
     features, labels = load_features_and_labels(spec, cache_root=cache_root)
     train_positions, test_positions = stratified_train_test_positions(
         labels.numpy(), train_fraction=train_fraction, random_seed=random_seed
     )
+    raw_features = features.numpy()
+    feature_scaling = fit_feature_scaling(raw_features[train_positions], spec.feature_scaling)
     return TabularDataset(
         dataset_key=spec.dataset_key,
-        train_features=features[train_positions],
+        train_features=torch.from_numpy(feature_scaling.apply(raw_features[train_positions])),
         train_labels=labels[train_positions],
-        test_features=features[test_positions],
+        test_features=torch.from_numpy(feature_scaling.apply(raw_features[test_positions])),
         test_labels=labels[test_positions],
         number_of_classes=spec.number_of_classes,
+        train_positions=train_positions,
+        test_positions=test_positions,
+        feature_scaling=feature_scaling,
     )

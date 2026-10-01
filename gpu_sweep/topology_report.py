@@ -377,8 +377,10 @@ def write_topology_record(
     payload = genome_to_record_payload(
         genome, title=title, structure_notes=structure_notes
     )
+    # Compact on purpose: every run stores its network now, and the microarray
+    # networks carry thousands of connections each.
     (output_directory / f"{base_name}.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
+        json.dumps(payload, separators=(",", ":")), encoding="utf-8"
     )
 
 

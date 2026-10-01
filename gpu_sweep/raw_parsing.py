@@ -12,6 +12,7 @@ import struct
 import urllib.request
 import zlib
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -183,11 +184,95 @@ def rows_to_features_and_labels(
     return _fill_missing_cells_with_column_mean(features), labels
 
 
-def min_max_normalize_columns(features: np.ndarray) -> np.ndarray:
-    """Scale every column onto ``[0, 1]``, leaving constant columns at zero.
+@dataclass(frozen=True)
+class FeatureScaling:
+    """Column scaling fitted on the training rows only, applicable to any rows.
 
-    Kept as an option on :func:`scale_feature_columns` for one-off comparisons;
-    the catalog itself standardises every dataset.
+    ``apply`` computes ``(features - offsets) / divisors`` and then sets every
+    column in ``constant_feature_indices`` to zero. A column that is constant
+    across the training rows carries no training signal, and dividing a
+    test-row deviation by a near-zero spread would blow it up; zeroing keeps
+    the network's input width unchanged while making the column inert.
+
+    Attributes:
+        method: One of :data:`FEATURE_SCALING_CHOICES`.
+        offsets: ``[n_features]`` values subtracted from every column.
+        divisors: ``[n_features]`` values every column is divided by.
+        constant_feature_indices: Columns constant across the training rows;
+            zeroed by ``apply`` unless ``method`` is ``"none"``.
+    """
+
+    method: str
+    offsets: np.ndarray
+    divisors: np.ndarray
+    constant_feature_indices: tuple[int, ...]
+
+    def apply(self, features: np.ndarray) -> np.ndarray:
+        """Scale ``features`` with the fitted statistics; returns float32."""
+        scaled = (np.asarray(features, dtype=np.float64) - self.offsets) / self.divisors
+        if self.method != "none" and self.constant_feature_indices:
+            scaled[:, list(self.constant_feature_indices)] = 0.0
+        return scaled.astype(np.float32)
+
+    def to_serializable_dict(self) -> dict[str, object]:
+        """JSON-safe copy of the fitted statistics, for the per-run split record."""
+        return {
+            "method": self.method,
+            "offsets": [float(value) for value in self.offsets],
+            "divisors": [float(value) for value in self.divisors],
+            "constant_feature_indices": list(self.constant_feature_indices),
+        }
+
+
+def fit_feature_scaling(train_features: np.ndarray, feature_scaling: str) -> FeatureScaling:
+    """Fit a column scaling on the training rows only.
+
+    ``"standardize"`` uses the training mean and population standard deviation;
+    ``"min_max"`` the training minimum and span; ``"none"`` is the identity.
+    Columns whose training values are all equal are reported in
+    ``constant_feature_indices`` and get a divisor of 1.
+
+    Args:
+        train_features: ``[n_train, n_features]`` float array - training rows only.
+        feature_scaling: One of :data:`FEATURE_SCALING_CHOICES`.
+
+    Returns:
+        The fitted :class:`FeatureScaling`.
+
+    Raises:
+        ValueError: If ``feature_scaling`` is not a known choice.
+    """
+    if feature_scaling not in FEATURE_SCALING_CHOICES:
+        raise ValueError(
+            f"feature_scaling must be one of {FEATURE_SCALING_CHOICES}, got {feature_scaling!r}"
+        )
+    train = np.asarray(train_features, dtype=np.float64)
+    constant_mask = train.max(axis=0) == train.min(axis=0)
+    constant_feature_indices = tuple(int(index) for index in np.flatnonzero(constant_mask))
+    number_of_features = train.shape[1]
+    if feature_scaling == "none":
+        offsets = np.zeros(number_of_features)
+        divisors = np.ones(number_of_features)
+    elif feature_scaling == "min_max":
+        offsets = train.min(axis=0)
+        divisors = np.where(constant_mask, 1.0, train.max(axis=0) - train.min(axis=0))
+    else:
+        offsets = train.mean(axis=0)
+        divisors = np.where(constant_mask, 1.0, train.std(axis=0))
+    return FeatureScaling(
+        method=feature_scaling,
+        offsets=offsets,
+        divisors=divisors,
+        constant_feature_indices=constant_feature_indices,
+    )
+
+
+def min_max_normalize_columns(features: np.ndarray) -> np.ndarray:
+    """Scale every column onto ``[0, 1]`` over all rows, leaving constant columns at zero.
+
+    Whole-matrix scaling, kept for one-off comparisons and for re-scoring the
+    networks of the first sweep. The catalog fits its scaling on the training
+    rows instead - see :func:`fit_feature_scaling`.
     """
     column_minima = features.min(axis=0, keepdims=True)
     column_maxima = features.max(axis=0, keepdims=True)
@@ -200,9 +285,12 @@ def min_max_normalize_columns(features: np.ndarray) -> np.ndarray:
 def standardize_columns(features: np.ndarray) -> np.ndarray:
     """Zero-mean, unit-variance every column over the whole dataset.
 
-    The scaling every dataset in the catalog uses. Constant columns come out at
-    zero: their spread is zero, and the ``1e-6`` floor on the standard
-    deviation keeps the division finite instead of producing NaN.
+    This is the scaling the first sweep used, statistics taken over all rows
+    before the split - which lets the test rows leak into the scaling. It is
+    kept only to re-score that sweep's stored networks on the inputs they were
+    evolved against; the catalog now uses :func:`fit_feature_scaling` on the
+    training rows. Constant columns come out at zero: their spread is zero, and
+    the ``1e-6`` added to the standard deviation keeps the division finite.
     """
     column_means = features.mean(axis=0, keepdims=True)
     column_standard_deviations = features.std(axis=0, keepdims=True) + 1e-6
@@ -211,6 +299,9 @@ def standardize_columns(features: np.ndarray) -> np.ndarray:
 
 def scale_feature_columns(features: np.ndarray, feature_scaling: str) -> np.ndarray:
     """Apply the caller's chosen column scaling, computed over all rows.
+
+    Whole-matrix scaling, as in the first sweep; see :func:`standardize_columns`
+    for why the catalog no longer uses it.
 
     Args:
         features: ``[n_samples, n_features]`` float array.
