@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import struct
 import urllib.request
+import zipfile
 import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -36,6 +37,23 @@ def download_file_if_missing(source_url: str, destination_path: Path) -> Path:
         print(f"Downloading {source_url} -> {destination_path}")
         urllib.request.urlretrieve(source_url, destination_path)
     return destination_path
+
+
+def extract_zip_member_if_missing(archive_path: Path, member_name: str) -> Path:
+    """Extract one member of a zip archive next to it unless it is already there.
+
+    Args:
+        archive_path: Zip archive to read on a cache miss.
+        member_name: Name of the member inside the archive.
+
+    Returns:
+        Path of the extracted member, for chaining into a read.
+    """
+    member_path = archive_path.parent / member_name
+    if not member_path.exists():
+        with zipfile.ZipFile(archive_path) as archive:
+            member_path.write_bytes(archive.read(member_name))
+    return member_path
 
 
 def read_delimited_rows(

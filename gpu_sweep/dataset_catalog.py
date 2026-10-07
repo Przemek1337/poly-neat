@@ -6,8 +6,9 @@ and the Kaggle Heart set as a duplicate of Cleveland. ParkinsonC (a .rar inside
 a UCI zip) and COVID-19 (Kaggle, authenticated) have no anonymous download and
 are out of scope for an automatic sweep.
 
-Where a KEEL source is unreachable (sci2s.ugr.es fails TLS verification), the
-dataset is taken from its original upstream instead.
+Each dataset is fetched from the source the paper cites for it: UCI for most
+rows, scikit-feature for the microarray sets and KEEL for Saheart. KEEL ships a
+zip holding one ``.dat`` file, which is extracted next to the archive.
 
 Every dataset is standardised per column - zero mean, unit variance. One
 scaling for all twenty keeps runtimes and fitness curves comparable across the
@@ -36,6 +37,7 @@ import torch
 from gpu_sweep.raw_parsing import (
     FeatureScaling,
     download_file_if_missing,
+    extract_zip_member_if_missing,
     read_arff_data_rows,
     read_delimited_rows,
     read_matlab_v5_arrays,
@@ -56,9 +58,13 @@ class TabularDatasetSpec:
     Attributes:
         dataset_key: Catalog key, also the cache subdirectory name.
         human_name: Name as the paper's table spells it.
-        reader: ``"delimited"``, ``"whitespace"``, ``"arff"`` or ``"matlab"``.
+        reader: ``"delimited"``, ``"whitespace"``, ``"arff"``, ``"keel"`` or
+            ``"matlab"``. A KEEL ``.dat`` file is read like ARFF: only the rows
+            after ``@data`` count.
         raw_files: ``(file_name, source_url)`` pairs; several files are read in
             order and concatenated, which is how SPECT, SPECTF and thyroid ship.
+        archive_member: When set, every raw file is a zip archive and this is
+            the member that is extracted from it and read.
         number_of_classes: Class count after label mapping.
         feature_scaling: ``"standardize"`` everywhere - see the module
             docstring for why the sweep does not mix scalings.
@@ -85,6 +91,7 @@ class TabularDatasetSpec:
     categorical_value_maps: dict[int, dict[str, float]] = field(default_factory=dict)
     missing_value_handling: str = "drop_row"
     matlab_label_value_to_index: dict[int, int] = field(default_factory=dict)
+    archive_member: str | None = None
 
 
 @dataclass(frozen=True)
@@ -311,18 +318,18 @@ DATASET_SPECS: dict[str, TabularDatasetSpec] = {
     "saheart": TabularDatasetSpec(
         dataset_key="saheart",
         human_name="Saheart",
-        reader="delimited",
+        reader="keel",
         raw_files=(
-            ("SAheart.data", "https://hastie.su.domains/ElemStatLearn/datasets/SAheart.data"),
+            ("saheart.zip", "https://sci2s.ugr.es/keel/dataset/data/classification/saheart.zip"),
         ),
+        archive_member="saheart.dat",
         number_of_classes=2,
         feature_scaling="standardize",
         expected_shape=(462, 9),
-        skip_header_rows=1,
-        label_column_index=10,
-        feature_column_indices=range(1, 10),
+        label_column_index=9,
+        feature_column_indices=range(0, 9),
         label_value_to_index={"0": 0, "1": 1},
-        categorical_value_maps={5: {"Absent": 0.0, "Present": 1.0}},
+        categorical_value_maps={4: {"Absent": 0.0, "Present": 1.0}},
         missing_value_handling="drop_row",
     ),
     "spectf_heart": TabularDatasetSpec(
@@ -447,7 +454,9 @@ def load_features_and_labels(
     rows: list[list[str]] = []
     for file_name, source_url in spec.raw_files:
         data_path = download_file_if_missing(source_url, dataset_directory / file_name)
-        if spec.reader == "arff":
+        if spec.archive_member is not None:
+            data_path = extract_zip_member_if_missing(data_path, spec.archive_member)
+        if spec.reader in ("arff", "keel"):
             rows.extend(read_arff_data_rows(data_path))
         else:
             rows.extend(
