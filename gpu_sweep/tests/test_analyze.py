@@ -95,6 +95,11 @@ def test_analyze_writes_the_friedman_report_for_each_metric(tmp_path: Path) -> N
     assert report["average_rank_by_algorithm"]["gamma"] == pytest.approx(3.0)
     assert report["control_method"] == "alpha"
     assert report["omnibus_rejects_null_hypothesis"] is True
+    assert report["omnibus_rejects_null_hypothesis"] == (
+        report["friedman_chi_squared_p_value"] <= report["alpha"]
+    )
+    assert not any("iman" in key for key in report)
+    assert "Iman" not in report["reference"]
     assert (results_directory / "statistics" / "friedman_test_accuracy.json").exists()
 
 

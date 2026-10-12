@@ -1,4 +1,4 @@
-"""Friedman, Iman-Davenport and Holm, per Derrac et al. (2011).
+"""Friedman and Holm, per Derrac et al. (2011).
 
 Reference:
     Derrac, J., Garcia, S., Molina, D., & Herrera, F. (2011). A practical
@@ -8,7 +8,9 @@ Reference:
 
 The paper's own worked examples are this module's test fixtures, so the
 implementation is checked against published numbers rather than against itself.
-Only Holm is implemented as a post-hoc procedure: section 6.2 states that it
+The omnibus decision is read from the Friedman chi-squared statistic itself; the
+Iman-Davenport derivation of section 4.2 is deliberately not used. Only Holm is
+implemented as a post-hoc procedure: section 6.2 states that it
 "can always be considered better than Bonferroni-Dunn's procedure", and section
 6.3 rejects Nemenyi for all-pairs work as "a very conservative procedure".
 """
@@ -21,7 +23,6 @@ from dataclasses import dataclass
 
 from gpu_sweep.special_functions import (
     chi_squared_survival,
-    f_distribution_survival,
     standard_normal_two_tailed_p_value,
 )
 
@@ -93,7 +94,7 @@ def average_ranks(
 
 @dataclass(frozen=True)
 class FriedmanResult:
-    """The omnibus test's ranks, statistics and p-values.
+    """The omnibus test's ranks, statistic and p-value.
 
     Attributes:
         number_of_algorithms: ``k`` in the paper's notation.
@@ -101,8 +102,6 @@ class FriedmanResult:
         average_ranks: ``R_j`` for each algorithm, in algorithm order.
         chi_squared_statistic: Eq. 2.
         chi_squared_p_value: Upper tail with ``k - 1`` degrees of freedom.
-        iman_davenport_statistic: Eq. 3.
-        iman_davenport_p_value: Upper tail of ``F(k - 1, (k - 1)(n - 1))``.
     """
 
     number_of_algorithms: int
@@ -110,18 +109,12 @@ class FriedmanResult:
     average_ranks: list[float]
     chi_squared_statistic: float
     chi_squared_p_value: float
-    iman_davenport_statistic: float
-    iman_davenport_p_value: float
 
 
 def friedman_statistics_from_average_ranks(
     average_rank_values: list[float], number_of_problems: int
 ) -> FriedmanResult:
-    """Compute both omnibus statistics from average ranks alone.
-
-    Eq. 2 for the Friedman statistic and Eq. 3 for the Iman-Davenport
-    derivation, which the paper introduces because the Friedman statistic
-    "often produces a conservative effect not desired".
+    """Compute the Friedman statistic (eq. 2) and its p-value from average ranks.
 
     Args:
         average_rank_values: ``R_j`` per algorithm.
@@ -142,21 +135,6 @@ def friedman_statistics_from_average_ranks(
     ) * (sum_of_squared_ranks - correction_term)
 
     chi_squared_degrees_of_freedom = number_of_algorithms - 1
-    denominator = (
-        number_of_problems * chi_squared_degrees_of_freedom - chi_squared_statistic
-    )
-    if denominator <= 0.0:
-        iman_davenport_statistic = math.inf
-        iman_davenport_p_value = 0.0
-    else:
-        iman_davenport_statistic = (
-            (number_of_problems - 1) * chi_squared_statistic
-        ) / denominator
-        iman_davenport_p_value = f_distribution_survival(
-            iman_davenport_statistic,
-            chi_squared_degrees_of_freedom,
-            chi_squared_degrees_of_freedom * (number_of_problems - 1),
-        )
 
     return FriedmanResult(
         number_of_algorithms=number_of_algorithms,
@@ -166,8 +144,6 @@ def friedman_statistics_from_average_ranks(
         chi_squared_p_value=chi_squared_survival(
             chi_squared_statistic, chi_squared_degrees_of_freedom
         ),
-        iman_davenport_statistic=iman_davenport_statistic,
-        iman_davenport_p_value=iman_davenport_p_value,
     )
 
 

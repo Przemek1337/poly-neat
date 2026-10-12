@@ -1,4 +1,4 @@
-"""Friedman, Iman-Davenport and Holm, checked against Derrac et al. (2011).
+"""Friedman and Holm, checked against Derrac et al. (2011).
 
 The fixtures are the paper's own worked examples, so a passing suite means the
 implementation reproduces published numbers rather than merely being
@@ -65,7 +65,7 @@ def test_average_ranks_reproduce_derrac_table_8() -> None:
 
 
 def test_friedman_statistics_reproduce_derrac_table_11() -> None:
-    """The paper reports chi-squared 35.99733 and Iman-Davenport 5.267817."""
+    """The paper reports a Friedman chi-squared of 35.99733."""
     result = friedman_statistics_from_average_ranks(
         DERRAC_TABLE_11_AVERAGE_RANKS, number_of_problems=25
     )
@@ -73,17 +73,34 @@ def test_friedman_statistics_reproduce_derrac_table_11() -> None:
     assert result.number_of_algorithms == 9
     assert result.number_of_problems == 25
     assert result.chi_squared_statistic == pytest.approx(35.99733, abs=1e-5)
-    assert result.iman_davenport_statistic == pytest.approx(5.267817, abs=1e-6)
 
 
 def test_friedman_p_values_reproduce_derrac_table_11() -> None:
-    """The paper reports p = 0.000018 for Friedman and 0.000006 for Iman-Davenport."""
+    """The paper reports p = 0.000018 for the Friedman statistic."""
     result = friedman_statistics_from_average_ranks(
         DERRAC_TABLE_11_AVERAGE_RANKS, number_of_problems=25
     )
 
     assert result.chi_squared_p_value == pytest.approx(0.000018, abs=5e-6)
-    assert result.iman_davenport_p_value == pytest.approx(0.000006, abs=5e-7)
+
+
+def test_friedman_result_carries_no_iman_davenport_statistic() -> None:
+    result = friedman_statistics_from_average_ranks(
+        DERRAC_TABLE_11_AVERAGE_RANKS, number_of_problems=25
+    )
+
+    assert not any("iman" in field_name for field_name in vars(result))
+
+
+def test_friedman_handles_perfect_rank_agreement() -> None:
+    # Every problem ranks the algorithms identically; the statistic is finite.
+    result = friedman_test(
+        [[0.9, 0.5, 0.1]] * 6,
+        higher_is_better=True,
+    )
+
+    assert result.chi_squared_statistic == pytest.approx(12.0)
+    assert 0.0 < result.chi_squared_p_value < 0.01
 
 
 def test_friedman_test_ranks_then_computes_the_statistics() -> None:

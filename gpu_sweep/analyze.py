@@ -184,7 +184,7 @@ def write_friedman_report(
         alpha: Family-wise significance level.
     """
     control_index = control_method_index(friedman_result.average_ranks)
-    rejects = friedman_result.iman_davenport_p_value <= alpha
+    rejects = friedman_result.chi_squared_p_value <= alpha
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(
         json.dumps(
@@ -201,8 +201,6 @@ def write_friedman_report(
                 "control_method": algorithm_names[control_index],
                 "friedman_chi_squared_statistic": friedman_result.chi_squared_statistic,
                 "friedman_chi_squared_p_value": friedman_result.chi_squared_p_value,
-                "iman_davenport_statistic": friedman_result.iman_davenport_statistic,
-                "iman_davenport_p_value": friedman_result.iman_davenport_p_value,
                 "omnibus_rejects_null_hypothesis": rejects,
                 "guidance": (
                     "The omnibus test rejects the null hypothesis of equal medians, "
@@ -219,7 +217,7 @@ def write_friedman_report(
                 ),
                 "reference": (
                     "Derrac, Garcia, Molina & Herrera (2011), Swarm and Evolutionary "
-                    "Computation 1(1), 3-18. Friedman: eq. 2; Iman-Davenport: eq. 3; "
+                    "Computation 1(1), 3-18. Friedman: eq. 2; "
                     "post-hoc z: eq. 12; Holm: section 4.3."
                 ),
             },

@@ -8,55 +8,8 @@ import pytest
 
 from gpu_sweep.special_functions import (
     chi_squared_survival,
-    f_distribution_survival,
-    regularized_incomplete_beta,
     standard_normal_two_tailed_p_value,
 )
-
-
-def test_regularized_incomplete_beta_is_zero_and_one_at_the_ends() -> None:
-    assert regularized_incomplete_beta(2.0, 3.0, 0.0) == 0.0
-    assert regularized_incomplete_beta(2.0, 3.0, 1.0) == 1.0
-
-
-def test_regularized_incomplete_beta_is_the_identity_for_a_equals_b_equals_one() -> None:
-    # I_x(1, 1) == x, because Beta(1, 1) is the uniform distribution.
-    assert regularized_incomplete_beta(1.0, 1.0, 0.25) == pytest.approx(0.25)
-    assert regularized_incomplete_beta(1.0, 1.0, 0.75) == pytest.approx(0.75)
-
-
-def test_regularized_incomplete_beta_is_one_half_at_the_symmetric_midpoint() -> None:
-    assert regularized_incomplete_beta(3.0, 3.0, 0.5) == pytest.approx(0.5)
-
-
-def test_f_distribution_survival_matches_a_textbook_critical_value() -> None:
-    # F(3, 10) 95th percentile is 3.708, so the upper tail there is 0.05.
-    assert f_distribution_survival(3.708, 3, 10) == pytest.approx(0.05, abs=1e-4)
-
-
-def test_f_distribution_survival_is_one_half_at_one_for_f_one_one() -> None:
-    assert f_distribution_survival(1.0, 1, 1) == pytest.approx(0.5)
-
-
-def test_f_distribution_survival_reproduces_the_derrac_iman_davenport_p_value() -> None:
-    """Derrac et al. (2011) Example 5: F_ID = 5.267817 with k = 9, n = 25.
-
-    The paper reports the p-value as 0.000006.
-    """
-    p_value = f_distribution_survival(5.267817, 8, 192)
-
-    assert p_value == pytest.approx(0.000006, abs=5e-7)
-
-
-def test_f_distribution_survival_stays_positive_deep_in_the_tail() -> None:
-    """Computed as 1 - lower_tail this returns exactly 0.0; the true value is 3.58e-18."""
-    assert f_distribution_survival(30.0, 5, 95) > 0.0
-    assert f_distribution_survival(30.0, 5, 95) == pytest.approx(3.578e-18, rel=1e-2)
-
-
-def test_f_distribution_survival_is_one_at_or_below_zero() -> None:
-    assert f_distribution_survival(0.0, 3, 10) == 1.0
-    assert f_distribution_survival(-1.0, 3, 10) == 1.0
 
 
 def test_chi_squared_survival_matches_a_textbook_critical_value() -> None:
