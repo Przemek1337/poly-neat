@@ -31,3 +31,10 @@ class SingleSpeciesSpeciator:
             ``[0] * len(genomes)``.
         """
         return [0] * len(genomes)
+
+    def state_dict(self) -> dict:
+        return {}
+
+    def load_state_dict(self, state: dict) -> None:
+        if state:
+            raise ValueError("SingleSpeciesSpeciator has no mutable state")

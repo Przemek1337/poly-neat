@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 
 import torch
@@ -140,6 +141,18 @@ class EXACTBackpropagationTrainer:
         self._use_batch_normalization = use_batch_normalization
         self._use_epigenetic_weight_initialization = use_epigenetic_weight_initialization
         self._device_for_computation = device_for_computation
+        # Optional collaborators added for the image benchmarks. All default to
+        # None/absent, so a trainer constructed the way every existing caller
+        # constructs it behaves exactly as before: unweighted cross-entropy, no
+        # batch transform, the global torch stream for shuffling, and no
+        # deadline.
+        self._class_weights: torch.Tensor | None = None
+        self._batch_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
+        self._batch_order_generator: torch.Generator | None = None
+        self._should_stop: Callable[[], bool] | None = None
+        self._optimizer_steps = 0
+        self._examples_processed = 0
+        self._was_interrupted = False
         logger.info(
             "EXACTBackpropagationTrainer ready: %d training samples, %dx%d images, "
             "%d epochs/genome, batch_size=%d, device=%s",
@@ -150,6 +163,57 @@ class EXACTBackpropagationTrainer:
             self._default_hyperparameters.batch_size,
             self._device_for_computation,
         )
+
+    def configure_supervised_extras(
+        self,
+        *,
+        class_weights: torch.Tensor | None = None,
+        batch_transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        batch_order_generator: torch.Generator | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> None:
+        """Attach the extras the image benchmarks need, without changing defaults.
+
+        Every argument is optional and every default reproduces the trainer's
+        historical behaviour exactly, so an EXACT run that does not call this
+        method is unaffected by its existence.
+
+        Args:
+            class_weights: Per-class weights for the cross-entropy, computed on
+                the split actually being trained on.
+            batch_transform: Applied to each training minibatch, reshaped to
+                ``NCHW``, before it is flattened back for the phenotype. The
+                benchmark passes its shared preprocessing here, which is why
+                augmentation happens in image space and the pixel order the
+                phenotype sees is unchanged.
+            batch_order_generator: Stream owning the minibatch permutation, so
+                the data order does not depend on how many numbers a model drew
+                while initializing.
+            should_stop: Checked at every minibatch boundary. Once it returns
+                ``True`` the session stops rather than starting more work, and
+                :attr:`was_interrupted` says so.
+        """
+        self._class_weights = (
+            None if class_weights is None else class_weights.to(self._device_for_computation)
+        )
+        self._batch_transform = batch_transform
+        self._batch_order_generator = batch_order_generator
+        self._should_stop = should_stop
+
+    @property
+    def optimizer_steps(self) -> int:
+        """Parameter updates applied across every session this trainer ran."""
+        return self._optimizer_steps
+
+    @property
+    def examples_processed(self) -> int:
+        """Training examples fed forward across every session, repeats included."""
+        return self._examples_processed
+
+    @property
+    def was_interrupted(self) -> bool:
+        """Whether the most recent session stopped early on the deadline."""
+        return self._was_interrupted
 
     @classmethod
     def from_config(
@@ -281,24 +345,38 @@ class EXACTBackpropagationTrainer:
         number_of_samples = self._training_features.shape[0]
         most_recent_batch_loss: float | None = None
 
+        self._was_interrupted = False
         for _epoch in range(self._number_of_training_epochs):
-            shuffled_indices = torch.randperm(
-                number_of_samples, device=self._device_for_computation
-            )
+            if self._batch_order_generator is None:
+                shuffled_indices = torch.randperm(
+                    number_of_samples, device=self._device_for_computation
+                )
+            else:
+                shuffled_indices = torch.randperm(
+                    number_of_samples, generator=self._batch_order_generator
+                ).to(self._device_for_computation)
             for batch_start in range(0, number_of_samples, hyperparameters.batch_size):
+                if self._should_stop is not None and self._should_stop():
+                    self._was_interrupted = True
+                    break
                 batch_indices = shuffled_indices[
                     batch_start : batch_start + hyperparameters.batch_size
                 ]
                 optimizer.zero_grad()
-                batch_logits = phenotype.forward_pass(
+                batch_features = self._apply_batch_transform(
                     self._training_features[batch_indices]
                 )
+                batch_logits = phenotype.forward_pass(batch_features)
                 batch_loss = functional.cross_entropy(
-                    batch_logits, self._training_labels[batch_indices]
+                    batch_logits,
+                    self._training_labels[batch_indices],
+                    weight=self._class_weights,
                 )
                 batch_loss.backward()
                 optimizer.step()
-                most_recent_batch_loss = float(batch_loss)
+                self._optimizer_steps += 1
+                self._examples_processed += int(batch_indices.shape[0])
+                most_recent_batch_loss = float(batch_loss.detach())
                 # Eq. 6: decoupled L2 decay on the kernels.
                 with torch.no_grad():
                     for kernel_parameter in kernel_parameters:
@@ -311,6 +389,8 @@ class EXACTBackpropagationTrainer:
                 ):
                     self.reset_optimizer_velocities(optimizer)
                     examples_processed_since_velocity_reset = 0
+            if self._was_interrupted:
+                break
             # Paper eqs. 7-9: per-epoch hyperparameter schedule.
             current_learning_rate = self.compute_next_learning_rate(
                 current_learning_rate,
@@ -339,3 +419,20 @@ class EXACTBackpropagationTrainer:
             )
         phenotype.eval()
         return phenotype.extract_genome_with_trained_weights()
+
+    def _apply_batch_transform(self, flat_batch: torch.Tensor) -> torch.Tensor:
+        """Run the configured batch transform in image space, then flatten back.
+
+        The phenotype's interface is a flat row per image, but augmentation and
+        normalization are spatial operations. So the batch is reshaped to
+        ``NCHW``, transformed, and flattened again in the same order - the
+        pixels the phenotype sees are rearranged by nothing but the transform
+        itself.
+        """
+        if self._batch_transform is None:
+            return flat_batch
+        as_images = flat_batch.reshape(
+            flat_batch.shape[0], 1, self._input_image_height, self._input_image_width
+        )
+        transformed = self._batch_transform(as_images)
+        return transformed.reshape(transformed.shape[0], -1)

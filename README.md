@@ -15,6 +15,7 @@ Implemented algorithms:
 | C-NEAT | `CNEATAlgorithm` | Scores each organism on one class only and keeps a container of the best recognizer per class | Alfaham et al., 2024 |
 | L-NEAT | `LNEATAlgorithm` | Interleaves evolution with Lamarckian backpropagation sessions on a fixed learning subset | Chen & Alahakoon, 2006 |
 | EXACT | `EXACTAlgorithm` | Evolves CNN filter topologies — nodes are filters, edges are convolutions — training every genome by backpropagation before it is scored, and co-evolves the training hyperparameters | Desell, 2017 |
+| DeepNEAT | `DeepNEATAlgorithm` | Evolves deep architectures where each node is a whole *layer* with its own hyperparameters and each edge carries a tensor; genomes hold no weights, so every network is trained from scratch during evaluation | Miikkulainen et al., 2017 |
 
 ---
 
@@ -49,17 +50,19 @@ uv run python -m examples.xor.neat            # NEAT on XOR
 uv run python -m examples.iris.cneat          # C-NEAT on Iris
 uv run python -m examples.mnist.hyperneat     # HyperNEAT on down-pooled MNIST
 uv run python -m examples.mnist.exact         # EXACT on full-resolution MNIST
+uv run python -m examples.fashion_mnist.deepneat  # DeepNEAT on Fashion-MNIST
 ```
 
-All fourteen examples:
+All sixteen examples:
 
-| Task | NEAT | FS-NEAT | FD-NEAT | HyperNEAT | HyperNEAT-LEO | NEAT-DBM | C-NEAT | L-NEAT | EXACT |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| `xor` | ✓ | ✓ | ✓ | ✓ | | ✓ | | | |
-| `iris` | | | | | | ✓ | ✓ | ✓ | |
-| `mnist` | ✓ | | | ✓ | | | | | ✓ |
-| `retina` | | | | ✓ | ✓ | | | | |
-| `visual_discrimination` | | | | ✓ | | | | | |
+| Task | NEAT | FS-NEAT | FD-NEAT | HyperNEAT | HyperNEAT-LEO | NEAT-DBM | C-NEAT | L-NEAT | EXACT | DeepNEAT |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| `xor` | ✓ | ✓ | ✓ | ✓ | | ✓ | | | | |
+| `iris` | | | | | | ✓ | ✓ | ✓ | | |
+| `mnist` | ✓ | | | ✓ | | | | | ✓ | ✓ |
+| `fashion_mnist` | | | | | | | | | | ✓ |
+| `retina` | | | | ✓ | ✓ | | | | | |
+| `visual_discrimination` | | | | ✓ | | | | | | |
 
 Artifacts — best genome as JSON and pickle, topology renders, TensorBoard event files — are written to `examples/<task>/artifacts/<algorithm>/`.
 
@@ -82,6 +85,8 @@ mnist_full = load_mnist(random_seed=42, grid_side=28,  # full-resolution, no sub
 ```
 
 Knobs are plain parameters: `train_fraction`, `grid_side` (any divisor of 28), `max_train_samples` and `max_test_samples`. The building blocks are public too: `load_mnist_features_and_labels(grid_side)` returns the whole 70,000-sample set as one `(features, labels)` pair, and `pool_features_to_grid(images, grid_side)` re-pools raw uint8 images. Raw files download once into `examples/<task>/data/` and are cached there.
+
+Fashion-MNIST (Xiao et al., 2017) is loaded the same way by `examples.fashion_mnist.dataset.load_fashion_mnist`, which takes the same parameters and returns the same bundle — it is a drop-in replacement for MNIST, being identically shaped (28x28 grayscale, 10 classes, 70,000 samples) but harder. It ships as four gzipped IDX archives rather than one `.npz`, so that package adds `read_idx_gz_file(path)`; pooling and standardization are imported from the MNIST loader rather than duplicated.
 
 The two synthetic tasks follow the same convention: `examples.xor.dataset.load_xor()` returns the four patterns, and `examples.visual_discrimination.dataset.load_visual_discrimination_trials(...)` returns a `VisualDiscriminationTrials` bundle.
 
@@ -148,7 +153,8 @@ poly-neat/
 │   │   ├── neatdbm/             difference-based weight mutation
 │   │   ├── cneat/               per-class containers and ensemble phenotype
 │   │   ├── lneat/               backpropagation trainer, trainable phenotype
-│   │   └── exact/               CNN genome, eight operators, conv phenotype, SHO
+│   │   ├── exact/               CNN genome, eight operators, conv phenotype, SHO
+│   │   └── deepneat/            layer-level genome, shape propagation, layer-stack phenotype
 │   ├── nn/                      activation functions + topology utilities
 │   ├── evaluators/              fitness evaluators (sequential, parallel, per-task)
 │   ├── runner/                  evolution loop, callbacks, termination criteria
@@ -161,7 +167,8 @@ poly-neat/
 │   ├── _experiment.py           example contract + registry
 │   ├── xor/                     neat, fsneat, hyperneat, neatdbm
 │   ├── iris/                    cneat, lneat, neatdbm
-│   ├── mnist/                   neat, hyperneat, exact
+│   ├── mnist/                   neat, hyperneat, exact, deepneat
+│   ├── fashion_mnist/           deepneat
 │   └── visual_discrimination/   hyperneat
 ├── benchmarks/                  repeat-runner + results
 └── tests/
@@ -183,6 +190,7 @@ poly-neat/
 | `cneat/cneat_config.py` | `CNEATConfig(NEATConfig)` - number of class labels for the container. |
 | `lneat/lneat_config.py` | `LNEATConfig(NEATConfig)` - learning interval, backpropagation session parameters, learning subset size. |
 | `exact/exact_config.py` | `EXACTConfig(NEATConfig)` - input image geometry, the eight operator probabilities, filter-size change options, crossover inclusion rates, the full backpropagation block (learning rate / momentum / weight decay with their per-epoch schedules, velocity reset ω, dropout, batch normalization) and the simplex hyperparameter optimization settings. |
+| `deepneat/deepneat_config.py` | `DeepNEATConfig(NEATConfig)` - input tensor geometry and class count, the four operator probabilities, the per-layer hyperparameter ranges evolution draws from (filter counts, kernel sizes, dense unit counts, dropout range), the total parameter budget above which a phenotype is rejected, and the fixed training block every genome is evaluated with (epochs, learning rate, batch size, determinism). The inherited connection-weight fields are unused: DeepNEAT genomes carry no weights. |
 
 FS-NEAT has no config of its own; it runs on plain `NEATConfig`.
 
@@ -231,6 +239,7 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 | `cneat/` | `CNEATAlgorithm` - organisms are scored on one assigned class; `ClassGenomeContainer` keeps the best recognizer per class; `ContainerEnsemblePhenotype` classifies by argmax over the container networks; `ContainerUpdateCallback` and `ContainerProgressLogger` maintain and report the container during the run. |
 | `lneat/` | `LNEATAlgorithm` - every `learning_interval_generations`, non-Type-1 offspring get a backpropagation session (`BackpropagationWeightTrainer`) on a fixed learning subset, and trained weights are inherited (Lamarckian). `TrainableTorchFeedForwardPhenotype` makes the phenotype's weights torch parameters; `RecognizerEnsemblePhenotype` assembles per-class recognizers into an argmax ensemble. |
 | `exact/` | `EXACTAlgorithm` - a CNN genome (`EXACTGenome`) whose nodes are filters and whose edges are convolutions, evolved by eight operators in `mutations/`. `EXACTInnovationTracker` keeps the master innovation list for the whole search; `EXACTCrossover` is fitness-asymmetric and discards children with an unreachable output; `TorchConvolutionalPhenotype` executes the CNN in one depth-ordered sweep with optional batch normalization and dropout; `EXACTBackpropagationTrainer` trains every untrained genome before it is scored and writes the kernels back (Lamarckian, with epigenetic weight initialization); `SimplexHyperparameterOptimizer` co-evolves each genome's eleven training hyperparameters. |
+| `deepneat/` | `DeepNEATAlgorithm` - a genome (`DeepNEATGenome`) whose nodes are whole *layers* carrying their own hyperparameters and whose edges carry tensors and no weight, evolved by four operators in `mutations/`. `layer_shape_propagation.py` prunes the genome to the nodes on an enabled input→output path and propagates tensor shapes along it, deciding how multiple incoming tensors are merged and coercing a flat tensor back to spatial form when a convolution needs one; `TorchLayerStackPhenotype` builds one `nn.Module` per surviving layer node and reports both `total_parameter_count` and `number_of_layer_modules`; `DeepNEATSpeciator` adds a layer-hyperparameter term to NEAT's compatibility distance. **`advance_one_generation` is not overridden** - because no weights are inherited, training belongs to the fitness evaluator (`TrainedNetworkAccuracyEvaluator`), and the inherited generational loop is enough. |
 
 ### `polyneat/nn/`
 
@@ -253,6 +262,7 @@ The classic NEAT implementation, one aspect per file. `polyneat/algorithms/` bel
 | `binary_recognizer_evaluator.py` | Scores a single-output recognizer network for one target class, used by L-NEAT's per-class runs. |
 | `multiclass_dataset_evaluator.py` | Scores each organism only on its assigned class over a labelled dataset, C-NEAT's training signal. |
 | `visual_discrimination_evaluator.py` | Trial generator + evaluator for locating the larger of two squares in a 2-D field (Stanley et al. 2009, section 4). |
+| `trained_network_accuracy_evaluator.py` | `TrainedNetworkAccuracyEvaluator` - trains each phenotype from a fresh random initialization by backpropagation, then scores it by validation accuracy. DeepNEAT's fitness signal: since its genomes inherit no weights, training lives here rather than in the generational loop. Trained weights are never written back anywhere. |
 
 ### `polyneat/runner/`
 
@@ -691,5 +701,7 @@ uv run ruff format polyneat
 - Stanovov, V., Akhmedova, Sh. & Semenkin, E. (2021). **Neuroevolution of augmented topologies with difference-based mutation**. *IOP Conference Series: Materials Science and Engineering*, 1047, 012075. DOI: 10.1088/1757-899X/1047/1/012075
 - Alfaham, A., Van Raemdonck, S. & Mercelis, S. (2024). **Genetic NEAT-Based Method for Multi-Class Classification**. *ACAI 2024: 7th International Conference on Algorithms, Computing and Artificial Intelligence*. DOI: 10.1109/ACAI63924.2024.10899662
 - Desell, T. (2017). **Developing a Volunteer Computing Project to Evolve Convolutional Neural Networks and Their Hyperparameters**. *2017 IEEE 13th International Conference on e-Science*, pp. 19–28. DOI: 10.1109/eScience.2017.14
+- Miikkulainen, R., Liang, J., Meyerson, E., Rawal, A., Fink, D., Francon, O., Raju, B., Shahrzad, H., Navruzyan, A., Duffy, N. & Hodjat, B. (2017). **Evolving Deep Neural Networks**. *arXiv:1703.00548*. Published in *Artificial Intelligence in the Age of Neural Networks and Brain Computing* (2019), pp. 293–312. DOI: 10.1016/B978-0-12-815480-9.00015-3
+- Xiao, H., Rasul, K. & Vollgraf, R. (2017). **Fashion-MNIST: a Novel Image Dataset for Benchmarking Machine Learning Algorithms**. *arXiv:1708.07747*.
 
 Every citation above is reproduced verbatim in the `References:` block of the corresponding module's docstring; the two sets are kept in sync deliberately.

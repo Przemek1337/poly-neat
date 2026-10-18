@@ -1,8 +1,9 @@
 """Pooled MNIST loading for the mnist examples.
 
 The standard Keras ``mnist.npz`` archive is downloaded once and cached under
-``examples/mnist/data/``. Images are average-pooled to a small grid and
-standardized, then split into a :class:`ClassificationDataset`.
+``examples/mnist/data/``. Images are average-pooled to a small grid while the
+archive's official train/test split is preserved. Standardization is fitted on
+training rows only.
 
 The layout mirrors ``examples/iris/dataset.py``: a raw
 ``load_mnist_features_and_labels`` returning ``(features, labels)`` for the whole
@@ -21,8 +22,9 @@ import torch
 
 from examples._datasets import (
     ClassificationDataset,
+    build_dataset_from_official_splits,
     download_file_if_missing,
-    split_features_and_labels,
+    standardize_feature_splits_from_training_statistics,
 )
 
 _MNIST_DATA_DIR = Path(__file__).parent / "data"
@@ -58,7 +60,7 @@ def pool_features_to_grid(images_uint8: np.ndarray, grid_side: int) -> np.ndarra
 
 
 def _standardize_features(features: np.ndarray) -> np.ndarray:
-    """Zero-mean, unit-variance each feature over the whole dataset.
+    """Zero-mean, unit-variance each feature of one supplied training matrix.
 
     Standardizing keeps pre-activation sums small so that the networks' outputs
     do not saturate, which matters for a usable softmax and for gradient in the
@@ -70,14 +72,27 @@ def _standardize_features(features: np.ndarray) -> np.ndarray:
     return (features - feature_mean) / feature_std
 
 
+def _load_mnist_canonical_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return the official MNIST train/test arrays without mixing the splits."""
+    npz_path = download_file_if_missing(_MNIST_NPZ_URL, _MNIST_DATA_DIR / "mnist.npz")
+    with np.load(npz_path) as mnist_data:
+        return (
+            mnist_data["x_train"].copy(),
+            mnist_data["y_train"].astype(np.int64, copy=True),
+            mnist_data["x_test"].copy(),
+            mnist_data["y_test"].astype(np.int64, copy=True),
+        )
+
+
 def load_mnist_features_and_labels(
     grid_side: int = 7,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Load the whole MNIST dataset, pooled to ``grid_side`` and standardized.
+    """Load all MNIST rows while fitting normalization on official train only.
 
-    The train and test halves of the Keras archive are concatenated into one
-    ``(features, labels)`` pair, mirroring :func:`load_iris_features_and_labels`;
-    the split is drawn later by :func:`load_mnist` / ``split_features_and_labels``.
+    This compatibility helper still returns one concatenated pair, but the
+    official test rows do not contribute to normalization statistics. New
+    benchmark code should use :func:`load_mnist`, which preserves the split in
+    its return type.
 
     Args:
         grid_side: Side length of the pooled grid; must divide 28.
@@ -88,20 +103,15 @@ def load_mnist_features_and_labels(
         ``[70000, grid_side ** 2]`` float tensor and labels is a ``[70000]``
         long tensor holding digits 0-9.
     """
-    npz_path = download_file_if_missing(_MNIST_NPZ_URL, _MNIST_DATA_DIR / "mnist.npz")
-    with np.load(npz_path) as mnist_data:
-        images = np.concatenate(
-            [mnist_data["x_train"], mnist_data["x_test"]], axis=0
-        )
-        labels = np.concatenate(
-            [mnist_data["y_train"], mnist_data["y_test"]]
-        ).astype(np.int64)
-
-    pooled = pool_features_to_grid(images, grid_side)
-    standardized = _standardize_features(pooled)
+    train_images, train_labels, test_images, test_labels = _load_mnist_canonical_arrays()
+    train_pooled = pool_features_to_grid(train_images, grid_side)
+    test_pooled = pool_features_to_grid(test_images, grid_side)
+    train_standardized, test_standardized = standardize_feature_splits_from_training_statistics(
+        torch.from_numpy(train_pooled), torch.from_numpy(test_pooled)
+    )
     return (
-        torch.from_numpy(standardized).to(torch.float32),
-        torch.from_numpy(labels),
+        torch.cat([train_standardized, test_standardized]),
+        torch.from_numpy(np.concatenate([train_labels, test_labels])),
     )
 
 
@@ -112,33 +122,52 @@ def load_mnist(
     grid_side: int = 7,
     max_train_samples: int | None = 3000,
     max_test_samples: int | None = 2000,
+    standardize: bool = True,
 ) -> ClassificationDataset:
-    """Load MNIST, pool it to a small grid and split it into a bundle.
+    """Load MNIST while preserving its official 60,000/10,000 split.
 
     The aligned top-level entrypoint, matching :func:`load_iris` in shape and
     return type. Vanilla NEAT grows topology from a minimal start, so the raw
-    28x28 images are pooled down to keep the search space tractable, and the
-    split is optionally subsampled to keep evaluation fast.
+    28x28 images are pooled down to keep the search space tractable. Optional
+    caps sample independently inside the canonical train and test partitions.
 
     Args:
-        train_fraction: Share of samples assigned to training.
+        train_fraction: Deprecated compatibility argument. The official split
+            is always preserved and this value is ignored.
         random_seed: Seed for the split and the subset draw.
         grid_side: Side length of the pooled grid; must divide 28.
         max_train_samples: Cap on training rows after the split; ``None`` keeps
             the whole training split.
         max_test_samples: Cap on test rows after the split.
+        standardize: Fit normalization on the selected official training rows
+            and apply it to test. DeepNEAT passes ``False`` and fits the
+            transform later, after carving validation out of train.
 
     Returns:
         A :class:`ClassificationDataset` with ``grid_side ** 2`` features and 10
         classes.
     """
-    features, labels = load_mnist_features_and_labels(grid_side)
-    return split_features_and_labels(
-        features,
-        labels,
-        train_fraction=train_fraction,
+    del train_fraction
+    train_images, train_labels, test_images, test_labels = _load_mnist_canonical_arrays()
+    dataset = build_dataset_from_official_splits(
+        torch.from_numpy(pool_features_to_grid(train_images, grid_side)),
+        torch.from_numpy(train_labels),
+        torch.from_numpy(pool_features_to_grid(test_images, grid_side)),
+        torch.from_numpy(test_labels),
         random_seed=random_seed,
         max_train_samples=max_train_samples,
         max_test_samples=max_test_samples,
         number_of_classes=_MNIST_NUMBER_OF_CLASSES,
+    )
+    if not standardize:
+        return dataset
+    standardized_train, standardized_test = standardize_feature_splits_from_training_statistics(
+        dataset.train_features, dataset.test_features
+    )
+    return ClassificationDataset(
+        train_features=standardized_train,
+        train_labels=dataset.train_labels,
+        test_features=standardized_test,
+        test_labels=dataset.test_labels,
+        number_of_classes=dataset.number_of_classes,
     )

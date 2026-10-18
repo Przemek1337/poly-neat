@@ -58,6 +58,8 @@ class EXACTCrossover:
         fitter_parent: EXACTGenome,
         less_fit_parent: EXACTGenome,
         rng: Generator,
+        *,
+        parents_have_equal_fitness: bool = False,
     ) -> EXACTGenome:
         """Return a child with every output reachable (section III-B discard rule).
 
@@ -71,6 +73,7 @@ class EXACTCrossover:
             an output node, a clone of the fitter parent (marked untrained)
             is returned instead.
         """
+        del parents_have_equal_fitness
         for _attempt in range(self.maximum_attempts_for_reachable_child):
             child_candidate = self._produce_child_candidate(
                 fitter_parent=fitter_parent,

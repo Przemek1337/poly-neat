@@ -9,3 +9,5 @@ dist/
 examples/*/data/
 examples/*/artifacts/*/tensorboard/
 benchmarks/results/
+examples/pediatric_pneumonia/cache/
+examples/pediatric_pneumonia/artifacts/

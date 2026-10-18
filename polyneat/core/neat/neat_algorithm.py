@@ -8,9 +8,10 @@ survival-threshold truncation, and crossover/mutation reproduction.
 
 from __future__ import annotations
 
+import inspect
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from statistics import mean, median
 from typing import cast
 
@@ -111,6 +112,30 @@ class NEATAlgorithm:
     @property
     def phenotype_decoder(self) -> PhenotypeDecoder:
         return self._phenotype_decoder
+
+    def export_evolution_state(self) -> dict:
+        """Export owned search state; unsupported custom speciators fail explicitly."""
+        export = getattr(self.speciator, "state_dict", None)
+        if not callable(export):
+            raise TypeError("Resuming requires a speciator with state_dict/load_state_dict")
+        return {
+            "innovation_tracker": self.innovation_tracker.state_dict(),
+            "speciator": export(),
+            "stagnation": [
+                asdict(value) for value in self._species_stagnation_bookkeeping.values()
+            ],
+        }
+
+    def import_evolution_state(self, state: dict) -> None:
+        """Restore state into freshly constructed, identically configured components."""
+        restore = getattr(self.speciator, "load_state_dict", None)
+        if not callable(restore):
+            raise TypeError("Resuming requires a speciator with state_dict/load_state_dict")
+        self.innovation_tracker.load_state_dict(state["innovation_tracker"])
+        restore(state["speciator"])
+        self._species_stagnation_bookkeeping = {
+            row["species_id"]: _SpeciesReproductionState(**row) for row in state["stagnation"]
+        }
 
     @classmethod
     def from_config(
@@ -689,11 +714,23 @@ class NEATAlgorithm:
                 fitter_parent, less_fit_parent = first_parent_genome, second_parent_genome
             else:
                 fitter_parent, less_fit_parent = second_parent_genome, first_parent_genome
-            crossover_child_genome = self.crossover.apply_to_parents(
-                fitter_parent=fitter_parent,
-                less_fit_parent=less_fit_parent,
-                rng=rng,
-            )
+            crossover_parameters = inspect.signature(self.crossover.apply_to_parents).parameters
+            if "parents_have_equal_fitness" in crossover_parameters:
+                crossover_child_genome = self.crossover.apply_to_parents(
+                    fitter_parent=fitter_parent,
+                    less_fit_parent=less_fit_parent,
+                    rng=rng,
+                    parents_have_equal_fitness=(first_parent_fitness == second_parent_fitness),
+                )
+            else:
+                # Keep custom crossover operators written against the original
+                # three-argument protocol operational. Built-in operators use
+                # the explicit tie flag above.
+                crossover_child_genome = self.crossover.apply_to_parents(
+                    fitter_parent=fitter_parent,
+                    less_fit_parent=less_fit_parent,
+                    rng=rng,
+                )
         else:
             crossover_child_genome, _ = self._select_single_parent_with_fitness(
                 candidate_genomes=reproducing_member_genomes,
