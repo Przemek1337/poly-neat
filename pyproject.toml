@@ -1,6 +1,6 @@
 [project]
 name = "polyneat"
-version = "0.1.0"
+version = "1.0.0"
 description = "Neuroevolution library for variable-topology and deep evolutionary algorithms"
 requires-python = ">=3.11"
 dependencies = [
