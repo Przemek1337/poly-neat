@@ -1,0 +1,13 @@
+.venv/
+runs/
+__pycache__/
+*.pkl
+*.egg-info/
+.pytest_cache/
+dist/
+*.pyc
+examples/*/data/
+examples/*/artifacts/*/tensorboard/
+benchmarks/results/
+examples/pediatric_pneumonia/cache/
+examples/pediatric_pneumonia/artifacts/

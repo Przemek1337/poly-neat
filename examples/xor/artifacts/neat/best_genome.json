@@ -1,0 +1,106 @@
+{
+  "node_genes": [
+    {
+      "node_id": 0,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 1,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 2,
+      "node_type": "bias",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 3,
+      "node_type": "output",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 4,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 5,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    }
+  ],
+  "connection_genes": [
+    {
+      "innovation_id": 0,
+      "source_node_id": 0,
+      "target_node_id": 3,
+      "weight": 1.959812801440652,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 1,
+      "source_node_id": 1,
+      "target_node_id": 3,
+      "weight": -2.73044313656811,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 2,
+      "source_node_id": 2,
+      "target_node_id": 3,
+      "weight": 1.9126759010827659,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 8,
+      "source_node_id": 2,
+      "target_node_id": 4,
+      "weight": 0.8062463391233345,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 9,
+      "source_node_id": 4,
+      "target_node_id": 3,
+      "weight": -3.488515381295204,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 14,
+      "source_node_id": 0,
+      "target_node_id": 4,
+      "weight": 3.30773265197139,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 21,
+      "source_node_id": 1,
+      "target_node_id": 4,
+      "weight": -1.5191983928497153,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 25,
+      "source_node_id": 1,
+      "target_node_id": 5,
+      "weight": 1.3506694774411134,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 24,
+      "source_node_id": 5,
+      "target_node_id": 3,
+      "weight": 1.9155468235056872,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 123,
+      "source_node_id": 0,
+      "target_node_id": 5,
+      "weight": -0.5337467310496694,
+      "is_enabled": true
+    }
+  ]
+}

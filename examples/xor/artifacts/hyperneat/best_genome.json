@@ -1,0 +1,109 @@
+{
+  "node_genes": [
+    {
+      "node_id": 0,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 1,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 2,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 3,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 4,
+      "node_type": "bias",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 5,
+      "node_type": "output",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 6,
+      "node_type": "hidden",
+      "activation_function_name": "sigmoid"
+    },
+    {
+      "node_id": 7,
+      "node_type": "hidden",
+      "activation_function_name": "identity"
+    }
+  ],
+  "connection_genes": [
+    {
+      "innovation_id": 0,
+      "source_node_id": 0,
+      "target_node_id": 5,
+      "weight": -4.612833932832229,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 1,
+      "source_node_id": 1,
+      "target_node_id": 5,
+      "weight": 0.7581266104731101,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 2,
+      "source_node_id": 2,
+      "target_node_id": 5,
+      "weight": 1.8914274682962975,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 3,
+      "source_node_id": 3,
+      "target_node_id": 5,
+      "weight": -1.3531968973018882,
+      "is_enabled": false
+    },
+    {
+      "innovation_id": 4,
+      "source_node_id": 4,
+      "target_node_id": 5,
+      "weight": -2.0303124373256076,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 16,
+      "source_node_id": 2,
+      "target_node_id": 6,
+      "weight": 1.657958897417269,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 15,
+      "source_node_id": 6,
+      "target_node_id": 5,
+      "weight": 2.522374601561491,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 92,
+      "source_node_id": 3,
+      "target_node_id": 7,
+      "weight": -0.006321524153383551,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 93,
+      "source_node_id": 7,
+      "target_node_id": 5,
+      "weight": -1.0628102493173524,
+      "is_enabled": true
+    }
+  ]
+}

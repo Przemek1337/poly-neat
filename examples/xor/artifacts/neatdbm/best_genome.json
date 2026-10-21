@@ -1,0 +1,146 @@
+{
+  "node_genes": [
+    {
+      "node_id": 0,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 1,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 2,
+      "node_type": "bias",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 3,
+      "node_type": "output",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 4,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 5,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    },
+    {
+      "node_id": 6,
+      "node_type": "hidden",
+      "activation_function_name": "steepened_sigmoid"
+    }
+  ],
+  "connection_genes": [
+    {
+      "innovation_id": 0,
+      "source_node_id": 0,
+      "target_node_id": 3,
+      "weight": 4.134340327358058,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 1,
+      "source_node_id": 1,
+      "target_node_id": 3,
+      "weight": -0.47254719987903915,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 2,
+      "source_node_id": 2,
+      "target_node_id": 3,
+      "weight": -2.5447487735856384,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 12,
+      "source_node_id": 2,
+      "target_node_id": 4,
+      "weight": -2.1804260085520424,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 11,
+      "source_node_id": 4,
+      "target_node_id": 3,
+      "weight": 5.051725838222092,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 22,
+      "source_node_id": 4,
+      "target_node_id": 5,
+      "weight": 0.6474528892071704,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 18,
+      "source_node_id": 5,
+      "target_node_id": 3,
+      "weight": 4.233873739445017,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 27,
+      "source_node_id": 0,
+      "target_node_id": 5,
+      "weight": -3.43613795400101,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 57,
+      "source_node_id": 2,
+      "target_node_id": 6,
+      "weight": -0.5878574763612363,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 58,
+      "source_node_id": 6,
+      "target_node_id": 3,
+      "weight": -2.112461587116055,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 96,
+      "source_node_id": 5,
+      "target_node_id": 6,
+      "weight": -2.5003305231971367,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 145,
+      "source_node_id": 1,
+      "target_node_id": 4,
+      "weight": -3.198969186135084,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 193,
+      "source_node_id": 1,
+      "target_node_id": 5,
+      "weight": 1.9565715599145828,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 428,
+      "source_node_id": 0,
+      "target_node_id": 4,
+      "weight": -1.0115903429993018,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 454,
+      "source_node_id": 1,
+      "target_node_id": 6,
+      "weight": 1.5404150934338485,
+      "is_enabled": true
+    }
+  ]
+}

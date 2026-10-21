@@ -1,0 +1,45 @@
+# PolyNEAT - MNIST EXACT configuration.
+# Evolves CNN filter topologies over full-resolution 28x28 MNIST images
+# (Desell 2017, sections III and VIII). number_of_output_nodes and the image
+# dimensions are overridden at runtime by examples/mnist/exact.py from the
+# dataset. The eight mutation-operator probabilities keep their
+# implementation defaults and are not listed here.
+
+population_size: 50
+number_of_input_nodes: 1
+number_of_output_nodes: 10
+random_seed: 42
+device_for_phenotype_evaluation: cpu
+
+# Input image geometry (the single input node's filter size)
+input_image_height: 28
+input_image_width: 28
+
+# Evolution (paper, section III)
+initial_population_strategy: exact_minimal_cnn
+number_of_mutations_per_genome: 3
+probability_of_crossover_vs_mutation_only: 0.2
+more_fit_parent_edge_inclusion_rate: 0.8
+less_fit_parent_edge_inclusion_rate: 0.4
+tournament_size_for_parent_selection: 1
+use_epigenetic_weight_initialization: true
+use_simplex_hyperparameter_optimization: true
+
+# Backpropagation (paper, section VII with the section VIII-B1 fixed
+# hyperparameters; epochs cut from the paper's 50-150 for runtime)
+number_of_training_epochs_per_genome: 3
+training_batch_size: 50
+velocity_reset_interval: 1000
+input_dropout_probability: 0.0
+hidden_dropout_probability: 0.0
+use_batch_normalization: true
+batch_normalization_alpha: 0.1
+backpropagation_learning_rate: 0.0025
+learning_rate_decay_factor: 0.95
+minimum_learning_rate: 0.00001
+backpropagation_momentum: 0.5
+momentum_decay_factor: 0.95
+maximum_momentum: 0.99
+backpropagation_weight_decay: 0.0005
+weight_decay_decay_factor: 0.95
+minimum_weight_decay: 0.000001

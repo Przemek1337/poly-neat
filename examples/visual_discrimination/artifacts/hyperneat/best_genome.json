@@ -1,0 +1,149 @@
+{
+  "node_genes": [
+    {
+      "node_id": 0,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 1,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 2,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 3,
+      "node_type": "input",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 4,
+      "node_type": "bias",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 5,
+      "node_type": "output",
+      "activation_function_name": "identity"
+    },
+    {
+      "node_id": 6,
+      "node_type": "hidden",
+      "activation_function_name": "gaussian"
+    },
+    {
+      "node_id": 7,
+      "node_type": "hidden",
+      "activation_function_name": "gaussian"
+    },
+    {
+      "node_id": 8,
+      "node_type": "hidden",
+      "activation_function_name": "sigmoid"
+    }
+  ],
+  "connection_genes": [
+    {
+      "innovation_id": 0,
+      "source_node_id": 0,
+      "target_node_id": 5,
+      "weight": -1.5131098748939726,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 1,
+      "source_node_id": 1,
+      "target_node_id": 5,
+      "weight": -0.5657031630860716,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 2,
+      "source_node_id": 2,
+      "target_node_id": 5,
+      "weight": 0.8067757884023912,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 3,
+      "source_node_id": 3,
+      "target_node_id": 5,
+      "weight": 6.617612075743749,
+      "is_enabled": false
+    },
+    {
+      "innovation_id": 4,
+      "source_node_id": 4,
+      "target_node_id": 5,
+      "weight": -3.2497913852208304,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 52,
+      "source_node_id": 0,
+      "target_node_id": 6,
+      "weight": 2.2801990026399377,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 51,
+      "source_node_id": 6,
+      "target_node_id": 5,
+      "weight": 3.1530860490274724,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 220,
+      "source_node_id": 2,
+      "target_node_id": 6,
+      "weight": -2.8695896766938347,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 241,
+      "source_node_id": 3,
+      "target_node_id": 7,
+      "weight": -2.4595008437182306,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 242,
+      "source_node_id": 7,
+      "target_node_id": 5,
+      "weight": 1.8350991485112238,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 263,
+      "source_node_id": 1,
+      "target_node_id": 6,
+      "weight": -0.09997301356266985,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 612,
+      "source_node_id": 3,
+      "target_node_id": 8,
+      "weight": 1.5231838121058436,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 613,
+      "source_node_id": 8,
+      "target_node_id": 5,
+      "weight": 0.6322270689871439,
+      "is_enabled": true
+    },
+    {
+      "innovation_id": 622,
+      "source_node_id": 1,
+      "target_node_id": 7,
+      "weight": 2.2217459451425605,
+      "is_enabled": true
+    }
+  ]
+}

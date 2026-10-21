@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from typing import Generic
+
+from numpy.random import Generator
+
+from polyneat.core.component_protocols import GenomeType
+from polyneat.core.type_aliases import FitnessValue
+
+
+class TournamentParentSelection(Generic[GenomeType]):
+    """K-way tournament: sample ``tournament_size`` candidates with replacement,
+    return the one with the highest fitness.
+
+    Larger ``tournament_size`` values push selection pressure up (favours the
+    fittest more aggressively); ``tournament_size=1`` is uniform random.
+
+    Deviation from the source paper: Stanley & Miikkulainen (2002) prescribe
+    explicit fitness sharing (section 3.3) and per-species offspring allocation,
+    but do not prescribe how an individual parent is drawn from a species once
+    the low performers have been eliminated. Tournament selection is this
+    implementation's choice, not a rule taken from the paper.
+
+    References:
+        Stanley, K. O., & Miikkulainen, R. (2002). Evolving Neural Networks
+            through Augmenting Topologies. *Evolutionary Computation*, 10(2), 99-127.
+        (Selection pressure within a species is unspecified there; see section 3.3.)
+    """
+
+    def __init__(self, tournament_size: int) -> None:
+        if tournament_size < 1:
+            raise ValueError(
+                f"TournamentParentSelection.tournament_size must be >= 1, got {tournament_size}"
+            )
+        self._tournament_size = tournament_size
+
+    def select_parent_indices(
+        self,
+        candidate_genomes: list[GenomeType],
+        candidate_fitnesses: list[FitnessValue],
+        number_of_parents_to_select: int,
+        rng: Generator,
+    ) -> list[int]:
+        if len(candidate_genomes) != len(candidate_fitnesses):
+            raise ValueError(
+                f"TournamentParentSelection: candidate_genomes has length "
+                f"{len(candidate_genomes)} but candidate_fitnesses has length "
+                f"{len(candidate_fitnesses)}"
+            )
+        if not candidate_genomes:
+            raise ValueError("TournamentParentSelection: no candidate genomes given")
+
+        selected_parent_indices: list[int] = []
+        for _selection_step_index in range(number_of_parents_to_select):
+            tournament_participant_indices = rng.integers(
+                low=0,
+                high=len(candidate_genomes),
+                size=self._tournament_size,
+            )
+            winner_index_in_population = max(
+                tournament_participant_indices,
+                key=lambda participant_index: candidate_fitnesses[int(participant_index)],
+            )
+            selected_parent_indices.append(int(winner_index_in_population))
+        return selected_parent_indices
+
+    def select_parents(
+        self,
+        candidate_genomes: list[GenomeType],
+        candidate_fitnesses: list[FitnessValue],
+        number_of_parents_to_select: int,
+        rng: Generator,
+    ) -> list[GenomeType]:
+        return [
+            candidate_genomes[selected_index]
+            for selected_index in self.select_parent_indices(
+                candidate_genomes=candidate_genomes,
+                candidate_fitnesses=candidate_fitnesses,
+                number_of_parents_to_select=number_of_parents_to_select,
+                rng=rng,
+            )
+        ]
